@@ -1,0 +1,31 @@
+#!/usr/bin/env node
+import { readFile, readdir } from 'node:fs/promises';
+import { join } from 'node:path';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { buildNodeContext, resolveNodeReference, type AgentDocument } from '@figctx/core';
+import { z } from 'zod';
+
+const root = argument('--root');
+if (!root) throw new Error('Usage: figctx-mcp --root <bundle-directory>');
+const bundleRoot = root;
+const document = JSON.parse(await readFile(`${bundleRoot}/document.agent.json`, 'utf8')) as AgentDocument;
+const manifest = JSON.parse(await readFile(`${bundleRoot}/manifest.json`, 'utf8')) as Record<string, unknown>;
+const tokenFiles = await Promise.all(['colors', 'typography', 'effects'].map(async (name) => [name, JSON.parse(await readFile(`${bundleRoot}/tokens/${name}.json`, 'utf8')) as { tokens: Array<{ nodeIds: string[] }> }] as const));
+const fontFile = JSON.parse(await readFile(`${bundleRoot}/tokens/fonts.json`, 'utf8')) as { fonts: Array<{ nodeIds: string[] }> };
+const referenceIndex = await loadReferences();
+const server = new McpServer({ name: 'figctx-mcp', version: '0.1.0' });
+const text = (value: unknown) => ({ content: [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }] });
+server.registerTool('list_frames', { description: 'List locally extracted frames and canvases.' }, async () => text(Object.values(document.nodesById).filter((n) => n.type === 'FRAME' || n.type === 'CANVAS')));
+server.registerTool('get_node_context', { description: 'Resolve a local node ID or Figma URL, including an attached reference PNG if available.', inputSchema: { reference: z.string() } }, async ({ reference }) => { const node = resolveNodeReference(document, reference); return text({ node, reference: referenceIndex.references.find((item) => item.nodeId === node.id) }); });
+server.registerTool('get_frame_bundle', { description: 'Return complete local subtree context, including descendant text, assets, vectors, style tokens, and attached reference PNGs.', inputSchema: { reference: z.string() } }, async ({ reference }) => { const context = buildNodeContext(document, resolveNodeReference(document, reference)); return text({ ...context, tokens: tokensFor(context.nodeIds), references: referenceIndex.references.filter((item) => context.nodeIds.includes(item.nodeId)), visualBaseline: manifest.visualBaseline }); });
+server.registerTool('get_style_tokens', { description: 'Read extracted token files and font requirements.' }, async () => text({ ...Object.fromEntries(tokenFiles), fonts: fontFile }));
+server.registerTool('get_asset', { description: 'Return the local extracted image path by hash.', inputSchema: { hash: z.string().regex(/^[a-f0-9]{40}$/) } }, async ({ hash }) => {
+  const entry = (await readdir(join(bundleRoot, 'assets/images'))).find((name) => name.startsWith(`${hash}.`));
+  if (!entry) throw new Error(`Asset not found: ${hash}`);
+  return text({ hash, path: `assets/images/${entry}`, absolutePath: join(bundleRoot, 'assets/images', entry) });
+});
+await server.connect(new StdioServerTransport());
+function argument(name: string) { const index=process.argv.indexOf(name); return index < 0 ? undefined : process.argv[index+1]; }
+function tokensFor(nodeIds: readonly string[]) { const selected = new Set(nodeIds); return { ...Object.fromEntries(tokenFiles.map(([name, file]) => [name, file.tokens.filter((token) => token.nodeIds.some((id) => selected.has(id)))])), fonts: fontFile.fonts.filter((font) => font.nodeIds.some((id) => selected.has(id))) }; }
+async function loadReferences(): Promise<{ references: Array<{ nodeId: string; path: string; width: number; height: number; sha256: string }> }> { try { return JSON.parse(await readFile(join(bundleRoot, 'references/index.json'), 'utf8')) as { references: Array<{ nodeId: string; path: string; width: number; height: number; sha256: string }> }; } catch (error: unknown) { if ((error as { code?: string }).code === 'ENOENT') return { references: [] }; throw error; } }

@@ -1,0 +1,1 @@
+{"name":"@figctx/mcp-server","version":"0.1.0","type":"module","bin":{"figctx-mcp":"./dist/main.js"},"scripts":{"build":"tsc -p tsconfig.json","test":"vitest run --passWithNoTests","typecheck":"tsc -p tsconfig.json --noEmit"},"dependencies":{"@figctx/core":"workspace:*","@modelcontextprotocol/sdk":"^1.20.0","zod":"^4.4.3"}}

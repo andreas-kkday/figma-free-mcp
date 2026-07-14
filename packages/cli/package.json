@@ -1,0 +1,21 @@
+{
+  "name": "figctx",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": {
+    "figctx": "./dist/main.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@figctx/core": "workspace:*",
+    "commander": "^13.1.0",
+    "fontkit": "^2.0.4"
+  },
+  "devDependencies": {
+    "@types/fontkit": "^2.0.9"
+  }
+}
