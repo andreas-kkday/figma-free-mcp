@@ -3,8 +3,9 @@ import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { buildNodeContext, composeBundleVectorGroupSvg, resolveNodeReference, type AgentDocument } from '@figctx/core';
+import { buildNodeContext, comparePng, composeBundleVectorGroupSvg, resolveNodeReference, type AgentDocument } from '@figctx/core';
 import { z } from 'zod';
+import { buildVisualReview, type ReviewPhase } from './review.js';
 
 const root = argument('--root');
 if (!root) throw new Error('Usage: figctx-mcp --root <bundle-directory>');
@@ -19,6 +20,13 @@ const text = (value: unknown) => ({ content: [{ type: 'text' as const, text: JSO
 server.registerTool('list_frames', { description: 'List locally extracted frames and canvases.' }, async () => text(Object.values(document.nodesById).filter((n) => n.type === 'FRAME' || n.type === 'CANVAS')));
 server.registerTool('get_node_context', { description: 'Resolve a local node ID or Figma URL, including an attached reference PNG if available.', inputSchema: { reference: z.string() } }, async ({ reference }) => { const node = resolveNodeReference(document, reference); return text({ node, reference: referenceIndex.references.find((item) => item.nodeId === node.id) }); });
 server.registerTool('get_frame_bundle', { description: 'Return complete local subtree context, including descendant text, assets, vectors, style tokens, and attached reference PNGs.', inputSchema: { reference: z.string() } }, async ({ reference }) => { const context = buildNodeContext(document, resolveNodeReference(document, reference)); return text({ ...context, tokens: tokensFor(context.nodeIds), references: referenceIndex.references.filter((item) => context.nodeIds.includes(item.nodeId)), visualBaseline: manifest.visualBaseline }); });
+server.registerTool('review_visual_match', { description: 'Call after the first implementation screenshot and again before completion. Compares an attached Figma reference PNG with candidatePath, returns reference/candidate/diff images and a corrective prompt. When passed is false, revise and call this tool again before declaring completion.', inputSchema: { reference: z.string(), candidatePath: z.string(), phase: z.enum(['midpoint', 'final']) } }, async ({ reference, candidatePath, phase }) => {
+  const node = resolveNodeReference(document, reference);
+  const attachedReference = referenceIndex.references.find((item) => item.nodeId === node.id);
+  if (!attachedReference) throw new Error(`No reference PNG is attached to node ${node.id}`);
+  const [referencePng, candidatePng] = await Promise.all([readFile(join(bundleRoot, attachedReference.path)), readFile(candidatePath)]);
+  return { content: buildVisualReview({ nodeId: node.id, phase: phase as ReviewPhase, reference: referencePng, candidate: candidatePng, comparison: comparePng(referencePng, candidatePng) }).content };
+});
 server.registerTool('get_vector_svg', { description: 'Compose one listed vector-only group into a self-contained SVG without modifying the bundle.', inputSchema: { reference: z.string() } }, async ({ reference }) => { const node = resolveNodeReference(document, reference); const svg = await composeBundleVectorGroupSvg(bundleRoot, document, node.id); if (!svg) throw new Error(`No renderable vector group matches ${reference}`); return text({ nodeId: node.id, svg }); });
 server.registerTool('get_style_tokens', { description: 'Read extracted token files and font requirements.' }, async () => text({ ...Object.fromEntries(tokenFiles), fonts: fontFile }));
 server.registerTool('get_asset', { description: 'Return the local extracted image path by hash.', inputSchema: { hash: z.string().regex(/^[a-f0-9]{40}$/) } }, async ({ hash }) => {

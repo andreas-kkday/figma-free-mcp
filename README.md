@@ -88,11 +88,25 @@ node packages/mcp-server/dist/main.js --root .figctx/design
 ```
 
 It exposes `list_frames`, `get_node_context`, `get_frame_bundle`,
-`get_vector_svg`, `get_style_tokens`, and `get_asset` via stdio. Node and frame responses include
+`review_visual_match`, `get_vector_svg`, `get_style_tokens`, and `get_asset` via stdio. Node and frame responses include
 attached reference metadata when present. The server reads only bundle files
-and does not open the source `.fig` or use the network.
+plus the candidate PNG supplied to `review_visual_match`; it never opens the source `.fig`, writes to the bundle, or uses the network.
 
 `get_frame_bundle` uses the same full-subtree contract as `figctx pack`.
+
+### Agent visual self-review
+
+An implementation agent should capture a same-viewport PNG after its first
+working version and again before it finishes. It calls
+`review_visual_match` with the target Figma node, the local screenshot path,
+and `phase: "midpoint"` or `phase: "final"`.
+
+The tool returns the attached Figma reference, the candidate, and a pixel diff
+as MCP image blocks, followed by a corrective prompt. Its fixed acceptance
+gate is `mismatchRatio <= 0.005` (0.5%). When `passed` is false, the agent must
+make the smallest corrective changes, take a fresh screenshot, and call the
+tool again; it must not declare the implementation complete first. Reference
+and candidate dimensions must match.
 
 `extract` creates a self-contained bundle. `inspect` and `pack` read that bundle
 only; they do not need to reopen the original `.fig` file.
