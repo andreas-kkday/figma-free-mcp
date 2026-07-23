@@ -3,7 +3,7 @@ import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { buildNodeContext, resolveNodeReference, type AgentDocument } from '@figctx/core';
+import { buildNodeContext, composeBundleVectorGroupSvg, resolveNodeReference, type AgentDocument } from '@figctx/core';
 import { z } from 'zod';
 
 const root = argument('--root');
@@ -19,6 +19,7 @@ const text = (value: unknown) => ({ content: [{ type: 'text' as const, text: JSO
 server.registerTool('list_frames', { description: 'List locally extracted frames and canvases.' }, async () => text(Object.values(document.nodesById).filter((n) => n.type === 'FRAME' || n.type === 'CANVAS')));
 server.registerTool('get_node_context', { description: 'Resolve a local node ID or Figma URL, including an attached reference PNG if available.', inputSchema: { reference: z.string() } }, async ({ reference }) => { const node = resolveNodeReference(document, reference); return text({ node, reference: referenceIndex.references.find((item) => item.nodeId === node.id) }); });
 server.registerTool('get_frame_bundle', { description: 'Return complete local subtree context, including descendant text, assets, vectors, style tokens, and attached reference PNGs.', inputSchema: { reference: z.string() } }, async ({ reference }) => { const context = buildNodeContext(document, resolveNodeReference(document, reference)); return text({ ...context, tokens: tokensFor(context.nodeIds), references: referenceIndex.references.filter((item) => context.nodeIds.includes(item.nodeId)), visualBaseline: manifest.visualBaseline }); });
+server.registerTool('get_vector_svg', { description: 'Compose one listed vector-only group into a self-contained SVG without modifying the bundle.', inputSchema: { reference: z.string() } }, async ({ reference }) => { const node = resolveNodeReference(document, reference); const svg = await composeBundleVectorGroupSvg(bundleRoot, document, node.id); if (!svg) throw new Error(`No renderable vector group matches ${reference}`); return text({ nodeId: node.id, svg }); });
 server.registerTool('get_style_tokens', { description: 'Read extracted token files and font requirements.' }, async () => text({ ...Object.fromEntries(tokenFiles), fonts: fontFile }));
 server.registerTool('get_asset', { description: 'Return the local extracted image path by hash.', inputSchema: { hash: z.string().regex(/^[a-f0-9]{40}$/) } }, async ({ hash }) => {
   const entry = (await readdir(join(bundleRoot, 'assets/images'))).find((name) => name.startsWith(`${hash}.`));

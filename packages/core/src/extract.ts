@@ -5,6 +5,7 @@ import { decodeKiwiCanvas } from './decoder/kiwi.js';
 import { normalizeDocument, type AgentDocument } from './normalize/document.js';
 import { extensionForAsset } from './assets.js';
 import { extractTokens } from './tokens/extract.js';
+import { vectorNetworkToSvg } from './vectors/svg.js';
 
 export interface ExtractionResult { agent: AgentDocument; outDir: string; }
 
@@ -24,13 +25,31 @@ export async function extractFig(sourcePath: string, outDir: string): Promise<Ex
     return bytes ? [{ blobId, bytes }] : [];
   });
   const vectorPaths = Object.fromEntries(vectors.map((vector) => [vector.blobId, `assets/vectors/vector-network-${vector.blobId}.bin.gz`]));
-  const agent = normalizeDocument(decoded.nodeChanges, { originFileKey, assetPaths, vectorPaths });
+  const vectorNodes = new Map(decoded.nodeChanges.flatMap((change) => {
+    const blobId = record(change.vectorData)?.vectorNetworkBlob;
+    return typeof blobId === 'number' ? [[blobId, change] as const] : [];
+  }));
+  const svgVectors = vectors.flatMap((vector) => {
+    const svg = vectorSvg(vectorNodes.get(vector.blobId), vector.bytes);
+    return svg ? [{ blobId: vector.blobId, svg }] : [];
+  });
+  const vectorSvgPaths = Object.fromEntries(svgVectors.map((vector) => [vector.blobId, `assets/vectors/vector-network-${vector.blobId}.svg`]));
+  const agent = normalizeDocument(decoded.nodeChanges, { originFileKey, assetPaths, vectorPaths, vectorSvgPaths });
   await writeBundle({
     outDir,
     manifest: { contractVersion: '1', parserVersion: decoded.decoderVersion, status: 'success', sourceFilename: basename(sourcePath), sourceSha256: archive.sourceSha256, ...(originFileKey ? { originFileKey } : {}), canvasVariant: archive.canvasVariant, nodeCount: decoded.nodeChanges.length, visualBaseline: archive.thumbnail ? 'assets/thumbnail.png' : undefined },
     raw: { decoderVersion: decoded.decoderVersion, canvasVersion: decoded.canvasVersion, document: decoded.document },
     agent,
-    images: archive.images, vectors, thumbnail: archive.thumbnail, tokens: extractTokens(agent)
+    images: archive.images, vectors, svgVectors, thumbnail: archive.thumbnail, tokens: extractTokens(agent)
   });
   return { agent, outDir };
+}
+
+function vectorSvg(node: Record<string, unknown> | undefined, bytes: Uint8Array): string | undefined {
+  const size = record(node?.size);
+  return typeof size?.x === 'number' && typeof size.y === 'number' ? vectorNetworkToSvg(bytes, { x: size.x, y: size.y }) : undefined;
+}
+
+function record(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
 }

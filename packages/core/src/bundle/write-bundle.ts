@@ -9,7 +9,8 @@ import type { ExtractedTokens } from '../tokens/extract.js';
 
 export interface BundleImage { hash: string; bytes: Uint8Array; format: AssetFormat; }
 export interface BundleVector { blobId: number; bytes: Uint8Array; }
-export interface BundleInput { outDir: string; manifest: Record<string, unknown>; raw: unknown; agent: AgentDocument; images: readonly BundleImage[]; vectors: readonly BundleVector[]; thumbnail?: Uint8Array; tokens: ExtractedTokens; }
+export interface BundleSvgVector { blobId: number; svg: string; }
+export interface BundleInput { outDir: string; manifest: Record<string, unknown>; raw: unknown; agent: AgentDocument; images: readonly BundleImage[]; vectors: readonly BundleVector[]; svgVectors?: readonly BundleSvgVector[]; thumbnail?: Uint8Array; tokens: ExtractedTokens; }
 
 export async function writeBundle(input: BundleInput): Promise<void> {
   if (await exists(input.outDir)) throw new FigctxError('OUTPUT_EXISTS', `Output directory exists: ${input.outDir}`);
@@ -33,8 +34,16 @@ export async function writeBundle(input: BundleInput): Promise<void> {
       imageIndex.push({ hash: image.hash, path, format: image.format });
     }
     await writeJson(join(temporary, 'assets/images.json'), { contractVersion: '1', images: imageIndex });
-    const vectorIndex: Array<{ blobId: number; path: string; format: 'kiwi-vector-network'; compression: 'gzip' }> = [];
-    for (const vector of input.vectors) { const path = `assets/vectors/vector-network-${vector.blobId}.bin.gz`; await writeFile(join(temporary, path), await gzipBytes(vector.bytes)); vectorIndex.push({ blobId: vector.blobId, path, format: 'kiwi-vector-network', compression: 'gzip' }); }
+    const svgByBlobId = new Map(input.svgVectors?.map((vector) => [vector.blobId, vector.svg]));
+    const vectorIndex: Array<{ blobId: number; path: string; format: 'kiwi-vector-network'; compression: 'gzip'; svgPath?: string }> = [];
+    for (const vector of input.vectors) {
+      const path = `assets/vectors/vector-network-${vector.blobId}.bin.gz`;
+      const svgPath = `assets/vectors/vector-network-${vector.blobId}.svg`;
+      await writeFile(join(temporary, path), await gzipBytes(vector.bytes));
+      const svg = svgByBlobId.get(vector.blobId);
+      if (svg) await writeFile(join(temporary, svgPath), svg);
+      vectorIndex.push({ blobId: vector.blobId, path, format: 'kiwi-vector-network', compression: 'gzip', ...(svg ? { svgPath } : {}) });
+    }
     await writeJson(join(temporary, 'assets/vectors.json'), { contractVersion: '1', vectors: vectorIndex });
     if (input.thumbnail) await writeFile(join(temporary, 'assets/thumbnail.png'), input.thumbnail);
     for (const node of Object.values(input.agent.nodesById).filter((node) => isSummaryRoot(node, input.agent))) {
