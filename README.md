@@ -27,6 +27,7 @@ versioned and unsupported variants fail explicitly instead of being guessed.
 figctx extract design.fig --out .figctx/design
 figctx inspect .figctx/design --node <node-id>
 figctx pack .figctx/design --node <node-id> --format codex
+figctx render .figctx/design --node <node-id> > artwork.svg
 ```
 
 ## Install and use
@@ -39,6 +40,7 @@ pnpm build
 node packages/cli/dist/main.js extract design.fig --out .figctx/design
 node packages/cli/dist/main.js inspect .figctx/design --node '1-2'
 node packages/cli/dist/main.js pack .figctx/design --node 'https://www.figma.com/design/file/name?node-id=1-2' --format codex
+node packages/cli/dist/main.js render .figctx/design --node '1-2' > artwork.svg
 ```
 
 ### Pixel-validation workflow
@@ -70,8 +72,10 @@ match it; a URL for another Figma file fails with
 `NODE_REFERENCE_FILE_MISMATCH` before a node is returned.
 
 `pack --format codex` returns the selected node's complete depth-first subtree,
-descendant text, deduplicated image/vector references, and every style token
-used by that subtree. This is the intended command for an agent implementing a
+descendant text, deduplicated image/vector references, available maximal
+vector-only groups, and every style token used by that subtree. Use `render`
+with one listed group ID to receive a single self-contained SVG; it does not
+write to the bundle. This is the intended command for an agent implementing a
 whole section or page, while `inspect` remains a concise single-node lookup.
 
 Start the MCP server after extraction:
@@ -81,7 +85,7 @@ node packages/mcp-server/dist/main.js --root .figctx/design
 ```
 
 It exposes `list_frames`, `get_node_context`, `get_frame_bundle`,
-`get_style_tokens`, and `get_asset` via stdio. Node and frame responses include
+`get_vector_svg`, `get_style_tokens`, and `get_asset` via stdio. Node and frame responses include
 attached reference metadata when present. The server reads only bundle files
 and does not open the source `.fig` or use the network.
 
@@ -105,6 +109,8 @@ only; they do not need to reopen the original `.fig` file.
 ├── assets/thumbnail.png
 ├── assets/vectors.json
 ├── assets/vectors/
+│   ├── vector-network-<id>.svg
+│   └── vector-network-<id>.bin.gz
 ├── references/index.json
 ├── references/<node-id>.png
 ├── comparisons/<node-id>/report.json
@@ -120,7 +126,7 @@ only; they do not need to reopen the original `.fig` file.
   blobs remain files or references, not base64 JSON payloads.
 - `document.agent.json` is the stable normalized layer tree. Nodes retain IDs,
   names, type, parent/child ordering, absolute bounds, transforms, visibility,
-  opacity, constraints, layout details, paints, effects, text, Figma-computed
+  opacity, masks and frame clipping flags, constraints, layout details, paints, effects, text, Figma-computed
   text layout metrics (baselines and font metadata), and asset/vector
   references.
 - `tokens/` contains deduplicated colors, typography, and effects, each with
@@ -132,11 +138,17 @@ only; they do not need to reopen the original `.fig` file.
 - `assets/images.json` maps every original image hash to its local, inferred
   path. When present in the export, `assets/thumbnail.png` is retained as the
   unmodified document-level visual baseline for implementation review.
-- `assets/vectors/` retains the original Kiwi vector-network blobs that are
-  referenced by vector nodes. `assets/vectors.json` maps a blob ID to its local
-  gzip-compressed local path; `document.agent.json` carries that same
-  `vectorRef` and compression marker. They are preserved losslessly for a
-  decoder adapter instead of being inaccurately converted to SVG.
+- `assets/vectors/` retains the original Kiwi vector-network blobs and, when
+  their geometry is valid, materializes a portable SVG beside each blob.
+  `assets/vectors.json` maps a blob ID to its lossless gzip-compressed path and
+  optional `svgPath`; `document.agent.json` carries the same fields in
+  `vectorRef`. SVG paths use `currentColor`, so consumers can style inline SVG
+  consistently; malformed vector blobs remain available only as `.bin.gz`.
+- Core consumers can use `composeVectorGroupSvg()` to compose a maximal
+  vector-only subtree into one SVG. It applies `frameMaskDisabled: false` as
+  SVG clip paths and Figma `mask: true` layers as masks for their following
+  siblings. Raster fills, strokes, blend modes, effects, gradients, and text
+  make a group unavailable rather than producing a partial SVG.
 - `frames/*/context.md` is a deterministic, compact summary for every canvas
   and top-level frame. Nested frames remain fully addressable with `pack` and
   are intentionally not duplicated as thousands of tiny files.

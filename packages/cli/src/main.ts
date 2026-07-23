@@ -3,7 +3,7 @@ import { copyFile, mkdir, readFile, readdir, rename, writeFile } from 'node:fs/p
 import { dirname, join, resolve } from 'node:path';
 import { openSync } from 'fontkit';
 import { Command } from 'commander';
-import { auditFontRequirements, buildNodeContext, comparePng, describePng, extractFig, FigctxError, resolveNodeReference, type AgentDocument, type AvailableFont, type FontRequirement } from '@figctx/core';
+import { auditFontRequirements, buildNodeContext, comparePng, composeBundleVectorGroupSvg, describePng, extractFig, FigctxError, resolveNodeReference, type AgentDocument, type AvailableFont, type FontRequirement } from '@figctx/core';
 
 const program = new Command().name('figctx').description('Extract local Figma .fig context bundles');
 program.command('extract <file>').requiredOption('--out <directory>').action(async (file, options) => {
@@ -21,6 +21,11 @@ program.command('pack <bundle>').requiredOption('--node <reference>').requiredOp
   const document = await loadDocument(bundle); const context = buildNodeContext(document, resolveNodeReference(document, options.node));
   const [tokens, manifest, references] = await Promise.all([loadTokens(bundle, context.nodeIds), loadManifest(bundle), loadReferences(bundle)]);
   process.stdout.write(JSON.stringify({ format: 'codex', ...context, tokens, references: references.references.filter((reference) => context.nodeIds.includes(reference.nodeId)), visualBaseline: typeof manifest.visualBaseline === 'string' ? manifest.visualBaseline : undefined }, null, 2) + '\n');
+});
+program.command('render <bundle>').requiredOption('--node <reference>').action(async (bundle, options) => {
+  const document = await loadDocument(bundle); const node = resolveNodeReference(document, options.node); const svg = await composeBundleVectorGroupSvg(bundle, document, node.id);
+  if (!svg) throw new FigctxError('NODE_NOT_FOUND', `No renderable vector group matches ${options.node}.`);
+  process.stdout.write(svg + '\n');
 });
 program.command('reference <bundle>').requiredOption('--node <reference>').requiredOption('--image <png>').action(async (bundle, options) => {
   const document = await loadDocument(bundle); const node = resolveNodeReference(document, options.node);
