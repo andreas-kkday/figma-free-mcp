@@ -1,4 +1,4 @@
-# fig-local-context
+# figma-free-mcp
 
 <img width="1584" height="396" alt="Copy of White and Blue Simple Gradient Business Profile LinkedIn Banner" src="https://github.com/user-attachments/assets/58e23751-4015-4ced-bc65-630dea16900a" />
 
