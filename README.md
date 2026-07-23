@@ -1,5 +1,8 @@
 # fig-local-context
 
+<img width="1584" height="396" alt="1" src="https://github.com/user-attachments/assets/d99a113c-ffda-421f-a1b5-888ec48ce298" />
+
+
 `fig-local-context` turns a locally exported Figma `.fig` file into a stable,
 agent-ready context bundle. It runs entirely on the machine that owns the
 export: there are no Figma API calls, MCP calls, browser automation, or remote
