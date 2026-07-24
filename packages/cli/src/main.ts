@@ -3,7 +3,8 @@ import { copyFile, mkdir, readFile, readdir, rename, writeFile } from 'node:fs/p
 import { dirname, join, resolve } from 'node:path';
 import { openSync } from 'fontkit';
 import { Command } from 'commander';
-import { auditFontRequirements, buildNodeContext, comparePng, composeBundleVectorGroupSvg, describePng, extractFig, FigctxError, resolveNodeReference, type AgentDocument, type AvailableFont, type FontRequirement } from '@figctx/core';
+import { auditFontRequirements, buildNodeContext, comparePng, composeBundleVectorGroupSvg, describePng, doctorBundle, extractFig, FigctxError, resolveNodeReference, searchNodes, type AgentDocument, type AvailableFont, type FontRequirement } from '@figctx/core';
+import { mismatchRatio, positiveInteger } from './options.js';
 
 const program = new Command().name('figctx').description('Extract local Figma .fig context bundles');
 program.command('extract <file>').requiredOption('--out <directory>').action(async (file, options) => {
@@ -15,6 +16,9 @@ program.command('resolve <bundle> <reference>').action(async (bundle, reference)
 });
 program.command('inspect <bundle>').requiredOption('--node <reference>').action(async (bundle, options) => {
   const document = await loadDocument(bundle); process.stdout.write(JSON.stringify(resolveNodeReference(document, options.node), null, 2) + '\n');
+});
+program.command('search <bundle> <query>').option('--type <type>', 'Filter by node type').option('--limit <number>', 'Maximum results', positiveInteger).action(async (bundle, query, options) => {
+  const document = await loadDocument(bundle); process.stdout.write(JSON.stringify(searchNodes(document, query, options), null, 2) + '\n');
 });
 program.command('pack <bundle>').requiredOption('--node <reference>').requiredOption('--format <format>').action(async (bundle, options) => {
   if (options.format !== 'codex') throw new FigctxError('NODE_NOT_FOUND', `Unsupported pack format: ${options.format}`);
@@ -34,13 +38,16 @@ program.command('reference <bundle>').requiredOption('--node <reference>').requi
   const index = await loadReferences(bundle); const entry = { nodeId: node.id, path, ...description }; const entries = index.references.filter((item) => item.nodeId !== node.id); entries.push(entry); entries.sort((a, b) => a.nodeId.localeCompare(b.nodeId));
   await writeJsonAtomic(join(bundle, 'references/index.json'), { contractVersion: '1', references: entries }); process.stdout.write(JSON.stringify(entry) + '\n');
 });
-program.command('compare <bundle>').requiredOption('--node <reference>').requiredOption('--candidate <png>').option('--threshold <number>', 'Pixelmatch threshold from 0 to 1', '0.1').action(async (bundle, options) => {
+program.command('compare <bundle>').requiredOption('--node <reference>').requiredOption('--candidate <png>').option('--threshold <number>', 'Pixelmatch threshold from 0 to 1', '0.1').option('--max-mismatch-ratio <number>', 'Fail when mismatch ratio exceeds this value', mismatchRatio).action(async (bundle, options) => {
   const document = await loadDocument(bundle); const node = resolveNodeReference(document, options.node); const reference = (await loadReferences(bundle)).references.find((item) => item.nodeId === node.id);
   if (!reference) throw new FigctxError('REFERENCE_NOT_FOUND', `No reference PNG is attached to node ${node.id}.`);
   const threshold = Number(options.threshold); if (!Number.isFinite(threshold) || threshold < 0 || threshold > 1) throw new FigctxError('INVALID_REFERENCE_IMAGE', '--threshold must be between 0 and 1.');
   const result = comparePng(await readFile(join(bundle, reference.path)), await readFile(options.candidate), threshold); const outputDirectory = join(bundle, 'comparisons', safeName(node.id));
   await mkdir(outputDirectory, { recursive: true }); await writeFile(join(outputDirectory, 'diff.png'), result.diffPng); const report = { nodeId: node.id, reference, candidate: resolve(options.candidate), threshold, ...result, diffPng: undefined, diffPath: `comparisons/${safeName(node.id)}/diff.png` }; delete (report as { diffPng?: unknown }).diffPng;
-  await writeJsonAtomic(join(outputDirectory, 'report.json'), report); process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+  await writeJsonAtomic(join(outputDirectory, 'report.json'), report); process.stdout.write(JSON.stringify(report, null, 2) + '\n'); if (options.maxMismatchRatio !== undefined && result.mismatchRatio > options.maxMismatchRatio) process.exitCode = 2;
+});
+program.command('doctor <bundle>').action(async (bundle) => {
+  const report = await doctorBundle(bundle); process.stdout.write(JSON.stringify(report, null, 2) + '\n'); if (!report.ok) process.exitCode = 1;
 });
 program.command('font-check <bundle>').requiredOption('--font-dir <directory>').action(async (bundle, options) => {
   const requirements = (JSON.parse(await readFile(join(bundle, 'tokens/fonts.json'), 'utf8')) as { fonts: FontRequirement[] }).fonts;

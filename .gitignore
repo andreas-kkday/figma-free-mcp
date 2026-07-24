@@ -6,3 +6,6 @@ coverage/
 *.figctx/
 docs/superpowers/
 .worktrees/
+.playwright-cli/
+graphify-out/
+logika-wordpress

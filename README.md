@@ -26,6 +26,7 @@ versioned and unsupported variants fail explicitly instead of being guessed.
 ```sh
 figctx extract design.fig --out .figctx/design
 figctx inspect .figctx/design --node <node-id>
+figctx search .figctx/design "checkout" --type TEXT --limit 10
 figctx pack .figctx/design --node <node-id> --format codex
 figctx render .figctx/design --node <node-id> > artwork.svg
 ```
@@ -82,6 +83,10 @@ figctx reference .figctx/design --node '320-182023' --image ./references/mobile-
 
 # After implementation, compare a local browser screenshot to the reference.
 figctx compare .figctx/design --node '320-182023' --candidate ./screenshots/mobile-page.png
+# Make visual drift fail CI only when it exceeds the chosen allowance.
+figctx compare .figctx/design --node '320-182023' --candidate ./screenshots/mobile-page.png --max-mismatch-ratio 0.02
+# Validate a bundle without reopening its source .fig.
+figctx doctor .figctx/design
 ```
 
 `reference` stores a PNG in `references/` with its dimensions and SHA-256.
@@ -109,10 +114,12 @@ Start the MCP server after extraction:
 node packages/mcp-server/dist/main.js --root .figctx/design
 ```
 
-It exposes `list_frames`, `get_node_context`, `get_frame_bundle`,
+It exposes `list_frames`, `list_frame_summaries`, `search_nodes`, `get_node_context`, `get_frame_bundle`,
 `get_vector_svg`, `get_style_tokens`, and `get_asset` via stdio. Node and frame responses include
 attached reference metadata when present. The server reads only bundle files
 and does not open the source `.fig` or use the network.
+
+Use `list_frame_summaries` or `search_nodes` to discover node IDs without loading full node records; `list_frame_summaries` returns 100 entries by default and includes `nextCursor` for the next batch (up to 200 with `limit`). `list_frames` remains available with its existing detailed response.
 
 `get_frame_bundle` uses the same full-subtree contract as `figctx pack`.
 
