@@ -43,6 +43,31 @@ node packages/cli/dist/main.js pack .figctx/design --node 'https://www.figma.com
 node packages/cli/dist/main.js render .figctx/design --node '1-2' > artwork.svg
 ```
 
+## Prompt examples
+
+### Implement a Figma page
+
+The following prompt can be given to an implementation agent:
+
+```text
+On the `page-stress` branch, implement the entire page from the Figma design.
+
+Use fig-context-extracter to inspect the design. It will help you extract all
+styles, images, and text from the local Figma file:
+https://github.com/symonbaikov/fig-local-context
+
+The local `.fig` file is located at:
+Downloads/Страница гайда (Copy).fig
+
+Implement both the desktop and mobile versions from the start.
+
+Desktop design:
+https://www.figma.com/design/EXfHitAQKwAIBHdY5fqa9A/%D0%A1%D1%82%D1%80%D0%B0%D0%BD%D0%B8%D1%86%D0%B0-%D0%B3%D0%B0%D0%B9%D0%B4%D0%B0--Copy-?node-id=54-1224&t=6N2Rf8lhG1IMJCRY-4
+
+Mobile design:
+https://www.figma.com/design/EXfHitAQKwAIBHdY5fqa9A/%D0%A1%D1%82%D1%80%D0%B0%D0%BD%D0%B8%D1%86%D0%B0-%D0%B3%D0%B0%D0%B9%D0%B4%D0%B0--Copy-?node-id=35-438&t=6N2Rf8lhG1IMJCRY-4
+```
+
 ### Pixel-validation workflow
 
 Save an exported PNG for each frame that needs visual parity, then attach it
