@@ -29,6 +29,7 @@ versioned and unsupported variants fail explicitly instead of being guessed.
 ```sh
 figctx extract design.fig --out .figctx/design
 figctx inspect .figctx/design --node <node-id>
+figctx search .figctx/design "checkout" --type TEXT --limit 10
 figctx pack .figctx/design --node <node-id> --format codex
 figctx render .figctx/design --node <node-id> > artwork.svg
 ```
@@ -85,6 +86,10 @@ figctx reference .figctx/design --node '320-182023' --image ./references/mobile-
 
 # After implementation, compare a local browser screenshot to the reference.
 figctx compare .figctx/design --node '320-182023' --candidate ./screenshots/mobile-page.png
+# Make visual drift fail CI only when it exceeds the chosen allowance.
+figctx compare .figctx/design --node '320-182023' --candidate ./screenshots/mobile-page.png --max-mismatch-ratio 0.02
+# Validate a bundle without reopening its source .fig.
+figctx doctor .figctx/design
 ```
 
 `reference` stores a PNG in `references/` with its dimensions and SHA-256.
@@ -112,10 +117,12 @@ Start the MCP server after extraction:
 node packages/mcp-server/dist/main.js --root .figctx/design
 ```
 
-It exposes `list_frames`, `get_node_context`, `get_frame_bundle`,
+It exposes `list_frames`, `list_frame_summaries`, `search_nodes`, `get_node_context`, `get_frame_bundle`,
 `review_visual_match`, `get_vector_svg`, `get_style_tokens`, and `get_asset` via stdio. Node and frame responses include
 attached reference metadata when present. The server reads only bundle files
 plus the candidate PNG supplied to `review_visual_match`; it never opens the source `.fig`, writes to the bundle, or uses the network.
+
+Use `list_frame_summaries` or `search_nodes` to discover node IDs without loading full node records; `list_frame_summaries` returns 100 entries by default and includes `nextCursor` for the next batch (up to 200 with `limit`). `list_frames` remains available with its existing detailed response.
 
 `get_frame_bundle` uses the same full-subtree contract as `figctx pack`.
 
@@ -145,7 +152,8 @@ only; they do not need to reopen the original `.fig` file.
 │   ├── colors.json
 │   ├── typography.json
 │   ├── effects.json
-│   └── fonts.json
+│   ├── fonts.json
+│   └── variables.json
 ├── assets/images/
 ├── assets/images.json
 ├── assets/thumbnail.png
@@ -175,6 +183,13 @@ only; they do not need to reopen the original `.fig` file.
   the source node IDs that produced it.
 - `tokens/fonts.json` records required font family, style, PostScript name,
   observed weight, and source node IDs. It never copies licensed system fonts.
+- `tokens/variables.json` records local Figma variable collections, modes, and
+  values when the `.fig` export contains them. Existing bundles may not have
+  this optional file; consumers return empty variables in that case.
+- Text nodes with mixed local styles expose compact `textSegments` runs in
+  `document.agent.json`; each run contains the character range, resolved
+  typography overrides, and fill override when present. Nodes also retain
+  local style references and variable bindings when the export provides them.
 - `assets/images/` contains extracted raster assets with extensions inferred
   from their real byte signatures, not from Figma's extensionless filenames.
 - `assets/images.json` maps every original image hash to its local, inferred

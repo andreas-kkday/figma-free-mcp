@@ -5,12 +5,12 @@ import { promisify } from 'node:util';
 import { extensionForAsset, type AssetFormat } from '../assets.js';
 import { FigctxError } from '../errors.js';
 import type { AgentDocument } from '../normalize/document.js';
-import type { ExtractedTokens } from '../tokens/extract.js';
+import type { ExtractedTokens, ExtractedVariables } from '../tokens/extract.js';
 
 export interface BundleImage { hash: string; bytes: Uint8Array; format: AssetFormat; }
 export interface BundleVector { blobId: number; bytes: Uint8Array; }
 export interface BundleSvgVector { blobId: number; svg: string; }
-export interface BundleInput { outDir: string; manifest: Record<string, unknown>; raw: unknown; agent: AgentDocument; images: readonly BundleImage[]; vectors: readonly BundleVector[]; svgVectors?: readonly BundleSvgVector[]; thumbnail?: Uint8Array; tokens: ExtractedTokens; }
+export interface BundleInput { outDir: string; manifest: Record<string, unknown>; raw: unknown; agent: AgentDocument; images: readonly BundleImage[]; vectors: readonly BundleVector[]; svgVectors?: readonly BundleSvgVector[]; thumbnail?: Uint8Array; tokens: ExtractedTokens; variables?: ExtractedVariables; }
 
 export async function writeBundle(input: BundleInput): Promise<void> {
   if (await exists(input.outDir)) throw new FigctxError('OUTPUT_EXISTS', `Output directory exists: ${input.outDir}`);
@@ -26,6 +26,7 @@ export async function writeBundle(input: BundleInput): Promise<void> {
     await writeJson(join(temporary, 'tokens/typography.json'), { contractVersion: '1', tokens: input.tokens.typography });
     await writeJson(join(temporary, 'tokens/effects.json'), { contractVersion: '1', tokens: input.tokens.effects });
     await writeJson(join(temporary, 'tokens/fonts.json'), { contractVersion: '1', fonts: input.tokens.fonts });
+    await writeJson(join(temporary, 'tokens/variables.json'), { contractVersion: '1', ...(input.variables ?? { collections: [], ungrouped: [] }) });
     const imageIndex: Array<{ hash: string; path: string; format: AssetFormat }> = [];
     for (const image of input.images) {
       const extension = extensionForAsset(image.format) ?? 'bin';
