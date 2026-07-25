@@ -1,4 +1,7 @@
-# fig-local-context
+# figma-free-mcp
+
+<img width="1584" height="396" alt="Copy of White and Blue Simple Gradient Business Profile LinkedIn Banner" src="https://github.com/user-attachments/assets/58e23751-4015-4ced-bc65-630dea16900a" />
+
 
 `fig-local-context` turns a locally exported Figma `.fig` file into a stable,
 agent-ready context bundle. It runs entirely on the machine that owns the
@@ -115,13 +118,27 @@ node packages/mcp-server/dist/main.js --root .figctx/design
 ```
 
 It exposes `list_frames`, `list_frame_summaries`, `search_nodes`, `get_node_context`, `get_frame_bundle`,
-`get_vector_svg`, `get_style_tokens`, and `get_asset` via stdio. Node and frame responses include
+`review_visual_match`, `get_vector_svg`, `get_style_tokens`, and `get_asset` via stdio. Node and frame responses include
 attached reference metadata when present. The server reads only bundle files
-and does not open the source `.fig` or use the network.
+plus the candidate PNG supplied to `review_visual_match`; it never opens the source `.fig`, writes to the bundle, or uses the network.
 
 Use `list_frame_summaries` or `search_nodes` to discover node IDs without loading full node records; `list_frame_summaries` returns 100 entries by default and includes `nextCursor` for the next batch (up to 200 with `limit`). `list_frames` remains available with its existing detailed response.
 
 `get_frame_bundle` uses the same full-subtree contract as `figctx pack`.
+
+### Agent visual self-review
+
+An implementation agent should capture a same-viewport PNG after its first
+working version and again before it finishes. It calls
+`review_visual_match` with the target Figma node, the local screenshot path,
+and `phase: "midpoint"` or `phase: "final"`.
+
+The tool returns the attached Figma reference, the candidate, and a pixel diff
+as MCP image blocks, followed by a corrective prompt. Its fixed acceptance
+gate is `mismatchRatio <= 0.005` (0.5%). When `passed` is false, the agent must
+make the smallest corrective changes, take a fresh screenshot, and call the
+tool again; it must not declare the implementation complete first. Reference
+and candidate dimensions must match.
 
 `extract` creates a self-contained bundle. `inspect` and `pack` read that bundle
 only; they do not need to reopen the original `.fig` file.
