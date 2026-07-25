@@ -73,6 +73,30 @@ describe('normalized document', () => {
     expect(normalized.nodesById['5:1']!.textLayout).not.toHaveProperty('glyphs');
   });
 
+  test('groups text style overrides into resolved character runs', () => {
+    const normalized = normalizeDocument([{
+      guid: { sessionID: 9, localID: 1 },
+      type: 'TEXT',
+      textData: {
+        characters: 'Hi all',
+        characterStyleIDs: [7, 7, 0, 9, 9, 9],
+        styleOverrideTable: [
+          { styleID: 7, fontName: { family: 'Inter', style: 'Bold' }, fillPaints: [{ type: 'SOLID', color: { r: 1 } }] },
+          { styleID: 9, textDecoration: 'UNDERLINE' }
+        ]
+      },
+      fontName: { family: 'Inter', style: 'Regular' },
+      fontSize: 16,
+      textDecoration: 'NONE'
+    }]);
+
+    expect(normalized.nodesById['9:1']!.textSegments).toEqual([
+      { start: 0, end: 2, text: 'Hi', styleId: 7, typography: { fontName: { family: 'Inter', style: 'Bold' }, fontSize: 16, textDecoration: 'NONE' }, fills: [{ type: 'SOLID', color: { r: 1 } }] },
+      { start: 2, end: 3, text: ' ', styleId: 0, typography: { fontName: { family: 'Inter', style: 'Regular' }, fontSize: 16, textDecoration: 'NONE' } },
+      { start: 3, end: 6, text: 'all', styleId: 9, typography: { fontName: { family: 'Inter', style: 'Regular' }, fontSize: 16, textDecoration: 'UNDERLINE' } }
+    ]);
+  });
+
   test('retains mask and frame clipping flags for SVG composition', () => {
     const normalized = normalizeDocument([{ guid: { sessionID: 6, localID: 1 }, type: 'FRAME', mask: true, frameMaskDisabled: false }]);
     expect(normalized.nodesById['6:1']).toMatchObject({ mask: true, frameMaskDisabled: false });

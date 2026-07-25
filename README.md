@@ -135,7 +135,8 @@ only; they do not need to reopen the original `.fig` file.
 │   ├── colors.json
 │   ├── typography.json
 │   ├── effects.json
-│   └── fonts.json
+│   ├── fonts.json
+│   └── variables.json
 ├── assets/images/
 ├── assets/images.json
 ├── assets/thumbnail.png
@@ -165,6 +166,13 @@ only; they do not need to reopen the original `.fig` file.
   the source node IDs that produced it.
 - `tokens/fonts.json` records required font family, style, PostScript name,
   observed weight, and source node IDs. It never copies licensed system fonts.
+- `tokens/variables.json` records local Figma variable collections, modes, and
+  values when the `.fig` export contains them. Existing bundles may not have
+  this optional file; consumers return empty variables in that case.
+- Text nodes with mixed local styles expose compact `textSegments` runs in
+  `document.agent.json`; each run contains the character range, resolved
+  typography overrides, and fill override when present. Nodes also retain
+  local style references and variable bindings when the export provides them.
 - `assets/images/` contains extracted raster assets with extensions inferred
   from their real byte signatures, not from Figma's extensionless filenames.
 - `assets/images.json` maps every original image hash to its local, inferred

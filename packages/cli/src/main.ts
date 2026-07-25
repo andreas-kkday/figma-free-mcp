@@ -60,12 +60,14 @@ async function loadTokens(bundle: string, nodeIds: readonly string[]) {
   const names = ['colors', 'typography', 'effects'];
   const documents = await Promise.all(names.map(async (name) => [name, JSON.parse(await readFile(`${bundle}/tokens/${name}.json`, 'utf8')) as { tokens: Array<{ nodeIds: string[] }> }] as const));
   const fonts = JSON.parse(await readFile(`${bundle}/tokens/fonts.json`, 'utf8')) as { fonts: Array<{ nodeIds: string[] }> };
+  const variables = await loadVariables(bundle);
   const selected = new Set(nodeIds);
-  return { ...Object.fromEntries(documents.map(([name, value]) => [name, value.tokens.filter((token) => token.nodeIds.some((id) => selected.has(id)))])), fonts: fonts.fonts.filter((font) => font.nodeIds.some((id) => selected.has(id))) };
+  return { ...Object.fromEntries(documents.map(([name, value]) => [name, value.tokens.filter((token) => token.nodeIds.some((id) => selected.has(id)))])), fonts: fonts.fonts.filter((font) => font.nodeIds.some((id) => selected.has(id))), variables };
 }
 async function loadManifest(bundle: string): Promise<Record<string, unknown>> { return JSON.parse(await readFile(`${bundle}/manifest.json`, 'utf8')) as Record<string, unknown>; }
 interface ReferenceEntry { nodeId: string; path: string; width: number; height: number; sha256: string; }
 async function loadReferences(bundle: string): Promise<{ references: ReferenceEntry[] }> { try { return JSON.parse(await readFile(join(bundle, 'references/index.json'), 'utf8')) as { references: ReferenceEntry[] }; } catch (error: unknown) { if ((error as { code?: string }).code === 'ENOENT') return { references: [] }; throw error; } }
+async function loadVariables(bundle: string): Promise<{ collections: unknown[]; ungrouped: unknown[] }> { try { return JSON.parse(await readFile(join(bundle, 'tokens/variables.json'), 'utf8')) as { collections: unknown[]; ungrouped: unknown[] }; } catch (error: unknown) { if ((error as { code?: string }).code === 'ENOENT') return { collections: [], ungrouped: [] }; throw error; } }
 async function writeJsonAtomic(path: string, value: unknown) { const temporary = `${path}.tmp-${process.pid}-${Date.now()}`; await writeFile(temporary, JSON.stringify(value, null, 2)); await rename(temporary, path); }
 function safeName(value: string) { return value.replace(/[^a-zA-Z0-9._-]/g, '_'); }
 async function readFonts(directory: string): Promise<AvailableFont[]> {
