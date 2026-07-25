@@ -280,6 +280,31 @@ The test suite has three layers:
    successful decode of a real export without copying, snapshotting, printing,
    or committing the design or its output.
 
+### Private real-export CI
+
+`Real Figma acceptance` runs on same-repository pull requests to `main` and on
+manual dispatch. Fork pull requests run the normal CI only, so they never
+receive the private fixture credential. The acceptance job downloads an
+immutable release asset from a separate private repository, verifies its
+SHA-256, extracts it, compares hashes of safe bundle outputs, and exercises all
+CLI and MCP tools without printing or uploading design data.
+
+One-time GitHub setup:
+
+1. Create a private test-data repository and publish the export as the release
+   asset named by `tests/acceptance/fixture-contract.json`.
+2. Set `FIGCTX_TEST_DATA_REPOSITORY` as a repository variable and
+   `FIGCTX_TEST_DATA_TOKEN` as a fine-grained, read-only token with access only
+   to that private repository.
+3. Protect `main` and require both the existing CI check and
+   `Real Figma acceptance / real-fig` for internal pull requests.
+
+To rotate the fixture, publish a new immutable release asset, run
+`FIGCTX_ACCEPTANCE_FIG=/path/to/figctx-acceptance.fig pnpm test:real-fig`
+locally after updating the contract hashes, and review only the resulting
+checksum/count diff. Never commit the `.fig`, generated bundle, logs, or
+workflow artifacts.
+
 ## Non-goals for the first release
 
 - Screenshot-perfect rendering
