@@ -8,6 +8,7 @@ export interface AgentNode {
   childIds: string[];
   zIndex: number;
   text?: string;
+  textSegments?: TextSegment[];
   bounds?: unknown;
   transform?: unknown;
   constraints?: { horizontal?: unknown; vertical?: unknown };
@@ -16,6 +17,8 @@ export interface AgentNode {
   strokes?: unknown;
   effects?: unknown;
   typography?: Record<string, unknown>;
+  styleRefs?: StyleReferences;
+  variableBindings?: VariableBinding[];
   textLayout?: Record<string, unknown>;
   visible?: boolean;
   opacity?: number;
@@ -26,6 +29,9 @@ export interface AgentNode {
   vectorRef?: VectorReference;
 }
 
+export interface TextSegment { start: number; end: number; text: string; styleId: number; typography: Record<string, unknown>; fills?: unknown; }
+export interface StyleReferences { text?: string; effects?: string; strokeFill?: string; }
+export interface VariableBinding { field: string; variableId: string; resolvedType?: string; }
 export interface AssetReference { hash: string; path: string; kind: 'image-fill'; }
 export interface VectorReference { blobId: number; path: string; format: 'kiwi-vector-network'; compression: 'gzip'; svgPath?: string; }
 
@@ -87,16 +93,64 @@ function normalizeNode(change: Record<string, unknown>, zIndex: number, assetPat
   const id = idFromGuid(change.guid, zIndex);
   const textData = record(change.textData);
   const layoutKeys = ['stackMode', 'stackSpacing', 'stackHorizontalPadding', 'stackVerticalPadding', 'stackPrimaryAlignItems', 'stackCounterAlignItems'];
-  const typographyKeys = ['fontName', 'fontSize', 'lineHeight', 'letterSpacing', 'textAlignHorizontal', 'textAlignVertical', 'fontVariantCommonLigatures', 'fontVariantContextualLigatures', 'fontVariations', 'textTracking'];
+  const typographyKeys = ['fontName', 'fontSize', 'lineHeight', 'letterSpacing', 'textAlignHorizontal', 'textAlignVertical', 'fontVariantCommonLigatures', 'fontVariantContextualLigatures', 'fontVariations', 'textTracking', 'textCase', 'textDecoration'];
+  const typography = pick(change, typographyKeys);
   const derivedTextData = record(change.derivedTextData);
   const textLayout = derivedTextData ? pick(derivedTextData, ['layoutSize', 'baselines', 'fontMetaData', 'truncationStartIndex', 'truncatedHeight', 'derivedLines']) : undefined;
+  const segments = textSegments(textData, typography, change.fillPaints);
+  const styles = styleReferences(change);
+  const bindings = variableBindings(change);
   return {
     id, name: typeof change.name === 'string' ? change.name : id, type: typeof change.type === 'string' ? change.type : 'UNKNOWN', childIds: [], zIndex,
-    ...(typeof textData?.characters === 'string' ? { text: textData.characters } : {}), ...(textLayout && Object.keys(textLayout).length ? { textLayout } : {}),
+    ...(typeof textData?.characters === 'string' ? { text: textData.characters } : {}), ...(segments ? { textSegments: segments } : {}), ...(textLayout && Object.keys(textLayout).length ? { textLayout } : {}),
     ...(change.size === undefined ? {} : { bounds: change.size }), ...(change.transform === undefined ? {} : { transform: change.transform }),
     ...(typeof change.visible === 'boolean' ? { visible: change.visible } : {}), ...(typeof change.opacity === 'number' ? { opacity: change.opacity } : {}), ...(change.blendMode === undefined ? {} : { blendMode: change.blendMode }), ...(typeof change.mask === 'boolean' ? { mask: change.mask } : {}), ...(typeof change.frameMaskDisabled === 'boolean' ? { frameMaskDisabled: change.frameMaskDisabled } : {}), constraints: { horizontal: change.horizontalConstraint, vertical: change.verticalConstraint },
-    layout: pick(change, layoutKeys), fills: change.fillPaints, strokes: change.strokePaints, effects: change.effects, typography: pick(change, typographyKeys), assetRefs: assetReferences(change.fillPaints, assetPaths), ...(vectorReference(change.vectorData, vectorPaths, vectorSvgPaths) ? { vectorRef: vectorReference(change.vectorData, vectorPaths, vectorSvgPaths) } : {})
+    layout: pick(change, layoutKeys), fills: change.fillPaints, strokes: change.strokePaints, effects: change.effects, typography, ...(styles ? { styleRefs: styles } : {}), ...(bindings ? { variableBindings: bindings } : {}), assetRefs: assetReferences(change.fillPaints, assetPaths), ...(vectorReference(change.vectorData, vectorPaths, vectorSvgPaths) ? { vectorRef: vectorReference(change.vectorData, vectorPaths, vectorSvgPaths) } : {})
   };
+}
+
+function textSegments(textData: Record<string, unknown> | undefined, baseTypography: Record<string, unknown>, baseFills: unknown): TextSegment[] | undefined {
+  if (!textData) return undefined;
+  const text = typeof textData.characters === 'string' ? textData.characters : undefined;
+  const styleIds = textData.characterStyleIDs;
+  if (!text || !Array.isArray(styleIds) || styleIds.length !== text.length || !styleIds.some((styleId) => typeof styleId === 'number' && styleId !== 0)) return undefined;
+  const overrides = new Map((Array.isArray(textData.styleOverrideTable) ? textData.styleOverrideTable : []).flatMap((entry) => {
+    const style = record(entry); const styleId = style?.styleID;
+    return typeof styleId === 'number' ? [[styleId, style] as const] : [];
+  }));
+  const typographyKeys = ['fontName', 'fontSize', 'lineHeight', 'letterSpacing', 'textAlignHorizontal', 'textAlignVertical', 'fontVariantCommonLigatures', 'fontVariantContextualLigatures', 'fontVariations', 'textTracking', 'textCase', 'textDecoration'];
+  const segments: TextSegment[] = [];
+  for (let start = 0; start < styleIds.length;) {
+    const styleId = typeof styleIds[start] === 'number' ? styleIds[start] : 0;
+    let end = start + 1;
+    while (end < styleIds.length && styleIds[end] === styleId) end += 1;
+    const override = overrides.get(styleId);
+    segments.push({ start, end, text: text.slice(start, end), styleId, typography: { ...baseTypography, ...pick(override ?? {}, typographyKeys) }, ...((override?.fillPaints ?? baseFills) === undefined ? {} : { fills: override?.fillPaints ?? baseFills }) });
+    start = end;
+  }
+  return segments;
+}
+
+function styleReferences(change: Record<string, unknown>): StyleReferences | undefined {
+  const refs = {
+    text: guidId(record(change.styleIdForText)?.guid),
+    effects: guidId(record(change.styleIdForEffect)?.guid),
+    strokeFill: guidId(record(change.styleIdForStrokeFill)?.guid)
+  };
+  return Object.values(refs).some(Boolean) ? refs : undefined;
+}
+
+function variableBindings(change: Record<string, unknown>): VariableBinding[] | undefined {
+  const entries = record(change.variableConsumptionMap)?.entries;
+  if (!Array.isArray(entries)) return undefined;
+  const bindings = entries.flatMap((entry) => {
+    const value = record(record(record(entry)?.variableData)?.value);
+    const variableId = guidId(record(value?.alias)?.guid);
+    const field = record(entry)?.variableField;
+    const resolvedType = record(record(entry)?.variableData)?.resolvedDataType;
+    return typeof field === 'string' && variableId ? [{ field, variableId, ...(typeof resolvedType === 'string' ? { resolvedType } : {}) }] : [];
+  });
+  return bindings.length ? bindings : undefined;
 }
 function vectorReference(value: unknown, vectorPaths: Readonly<Record<number, string>> | undefined, vectorSvgPaths: Readonly<Record<number, string>> | undefined): VectorReference | undefined {
   const blobId = record(value)?.vectorNetworkBlob;
@@ -117,5 +171,6 @@ export function hashToHex(value: unknown): string | undefined {
   return values.length === 20 && values.every((byte) => typeof byte === 'number' && byte >= 0 && byte <= 255) ? Buffer.from(values as number[]).toString('hex') : undefined;
 }
 function idFromGuid(value: unknown, fallback: number): string { const guid = record(value); return typeof guid?.sessionID === 'number' && typeof guid.localID === 'number' ? `${guid.sessionID}:${guid.localID}` : `index:${fallback}`; }
+function guidId(value: unknown): string | undefined { const guid = record(value); return typeof guid?.sessionID === 'number' && typeof guid.localID === 'number' ? `${guid.sessionID}:${guid.localID}` : undefined; }
 function record(value: unknown): Record<string, unknown> | undefined { return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined; }
 function pick(value: Record<string, unknown>, keys: string[]): Record<string, unknown> { return Object.fromEntries(keys.filter((key) => value[key] !== undefined).map((key) => [key, value[key]])); }

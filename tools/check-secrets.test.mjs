@@ -4,7 +4,6 @@ import { findSecretFindings } from './check-secrets.mjs';
 
 test('reports the secret type and line without retaining the secret value', () => {
   const findings = findSecretFindings(`const token = "figd_${'a'.repeat(22)}";\n`);
-
   assert.deepEqual(findings, [{ line: 1, type: 'Figma personal access token' }]);
   assert.equal(JSON.stringify(findings).includes('figd_'), false);
 });

@@ -4,7 +4,7 @@ import { writeBundle } from './bundle/write-bundle.js';
 import { decodeKiwiCanvas } from './decoder/kiwi.js';
 import { normalizeDocument, type AgentDocument } from './normalize/document.js';
 import { extensionForAsset } from './assets.js';
-import { extractTokens } from './tokens/extract.js';
+import { extractTokens, extractVariables } from './tokens/extract.js';
 import { vectorNetworkToSvg } from './vectors/svg.js';
 
 export interface ExtractionResult { agent: AgentDocument; outDir: string; }
@@ -35,12 +35,16 @@ export async function extractFig(sourcePath: string, outDir: string): Promise<Ex
   });
   const vectorSvgPaths = Object.fromEntries(svgVectors.map((vector) => [vector.blobId, `assets/vectors/vector-network-${vector.blobId}.svg`]));
   const agent = normalizeDocument(decoded.nodeChanges, { originFileKey, assetPaths, vectorPaths, vectorSvgPaths });
+  const variables = extractVariables(decoded.nodeChanges);
+  const warnings = agent.nodesById && Object.values(agent.nodesById).some((node) => node.styleRefs) && !decoded.nodeChanges.some((change) => change.type === 'STYLE')
+    ? ['STYLE_DEFINITIONS_UNAVAILABLE']
+    : [];
   await writeBundle({
     outDir,
-    manifest: { contractVersion: '1', parserVersion: decoded.decoderVersion, status: 'success', sourceFilename: basename(sourcePath), sourceSha256: archive.sourceSha256, ...(originFileKey ? { originFileKey } : {}), canvasVariant: archive.canvasVariant, nodeCount: decoded.nodeChanges.length, visualBaseline: archive.thumbnail ? 'assets/thumbnail.png' : undefined },
+    manifest: { contractVersion: '1', parserVersion: decoded.decoderVersion, status: 'success', sourceFilename: basename(sourcePath), sourceSha256: archive.sourceSha256, ...(originFileKey ? { originFileKey } : {}), canvasVariant: archive.canvasVariant, nodeCount: decoded.nodeChanges.length, visualBaseline: archive.thumbnail ? 'assets/thumbnail.png' : undefined, ...(warnings.length ? { warnings } : {}) },
     raw: { decoderVersion: decoded.decoderVersion, canvasVersion: decoded.canvasVersion, document: decoded.document },
     agent,
-    images: archive.images, vectors, svgVectors, thumbnail: archive.thumbnail, tokens: extractTokens(agent)
+    images: archive.images, vectors, svgVectors, thumbnail: archive.thumbnail, tokens: extractTokens(agent), variables
   });
   return { agent, outDir };
 }

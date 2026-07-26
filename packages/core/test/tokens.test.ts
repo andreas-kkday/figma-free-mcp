@@ -11,3 +11,18 @@ test('deduplicates color, typography, and effect tokens with node references', (
   expect(tokens.effects[0]!.nodeIds).toEqual(['1:1', '1:2']);
   expect(tokens.fonts).toMatchObject([{ family: 'Inter', style: 'Bold', postscript: 'Inter-Bold', weights: [700], nodeIds: ['1:1', '1:2'] }]);
 });
+
+test('extracts Figma variable collections and mode values', async () => {
+  const module = await import('../src/tokens/extract.js') as typeof import('../src/tokens/extract.js') & {
+    extractVariables?: (changes: readonly Record<string, unknown>[]) => unknown;
+  };
+
+  expect(module.extractVariables).toBeTypeOf('function');
+  expect(module.extractVariables!([
+    { guid: { sessionID: 1, localID: 10 }, type: 'VARIABLE_SET', name: 'Colors', variableSetModes: [{ id: { sessionID: 1, localID: 0 }, name: 'Light' }] },
+    { guid: { sessionID: 1, localID: 11 }, type: 'VARIABLE', name: 'Brand', variableResolvedType: 'COLOR', variableSetID: { guid: { sessionID: 1, localID: 10 } }, variableDataValues: { entries: [{ modeID: { sessionID: 1, localID: 0 }, variableData: { value: { colorValue: { r: 1, g: 0, b: 0, a: 1 } }, dataType: 'COLOR', resolvedDataType: 'COLOR' } }] } }
+  ])).toEqual({
+    collections: [{ id: '1:10', name: 'Colors', modes: [{ id: '1:0', name: 'Light' }], variables: [{ id: '1:11', name: 'Brand', resolvedType: 'COLOR', values: [{ modeId: '1:0', value: { colorValue: { r: 1, g: 0, b: 0, a: 1 } }, dataType: 'COLOR', resolvedType: 'COLOR' }] }] }],
+    ungrouped: []
+  });
+});

@@ -51,8 +51,8 @@ async function main() {
     assert.equal(actual, expected, `Extracted output checksum differs for ${path}.`);
   }
 
-  await exerciseCli(bundle, probe);
-  await exerciseMcp(bundle, probe);
+  const thumbnail = await exerciseCli(bundle, probe);
+  await exerciseMcp(bundle, probe, thumbnail);
   process.stdout.write(`Real Figma acceptance passed (nodes=${Object.keys(document.nodesById).length}, images=${images.images.length}, vectors=${vectors.vectors.length}).\n`);
 }
 
@@ -87,9 +87,10 @@ async function exerciseCli(bundle, probe) {
   const fontCheck = await cli(['font-check', bundle, '--font-dir', fontDirectory], true);
   assert.equal(fontCheck.code, fonts.fonts.length ? 2 : 0, 'font-check did not report the expected missing-font result.');
   await cli(['doctor', bundle]);
+  return thumbnail;
 }
 
-async function exerciseMcp(bundle, probe) {
+async function exerciseMcp(bundle, probe, thumbnail) {
   const [{ Client }, { StdioClientTransport }] = await Promise.all([
     import(mcpRequire.resolve('@modelcontextprotocol/sdk/client/index.js')),
     import(mcpRequire.resolve('@modelcontextprotocol/sdk/client/stdio.js'))
@@ -99,12 +100,15 @@ async function exerciseMcp(bundle, probe) {
   try {
     await client.connect(transport);
     const tools = await client.listTools();
-    assert.deepEqual(tools.tools.map((tool) => tool.name), ['list_frames', 'list_frame_summaries', 'search_nodes', 'get_node_context', 'get_frame_bundle', 'get_vector_svg', 'get_style_tokens', 'get_asset', 'inspect_node']);
+    assert.deepEqual(tools.tools.map((tool) => tool.name), ['list_frames', 'list_frame_summaries', 'search_nodes', 'get_node_context', 'get_frame_bundle', 'review_visual_match', 'get_vector_svg', 'get_style_tokens', 'get_asset', 'inspect_node']);
     assert(Array.isArray(await toolJson(client, 'list_frames')));
     assert(Array.isArray((await toolJson(client, 'list_frame_summaries', { limit: 1 })).items));
     assert((await toolJson(client, 'search_nodes', { query: probe.query, limit: 1 })).length > 0);
     assert.equal((await toolJson(client, 'get_node_context', { reference: probe.rootId })).node.id, probe.rootId);
     assert((await toolJson(client, 'get_frame_bundle', { reference: probe.rootId })).nodeIds.includes(probe.rootId));
+    const review = await client.callTool({ name: 'review_visual_match', arguments: { reference: probe.rootId, candidatePath: thumbnail, phase: 'final' } });
+    assert(review.content.some((item) => item.type === 'image'));
+    assert(review.content.some((item) => item.type === 'text'));
     assert((await toolJson(client, 'get_vector_svg', { reference: probe.vectorNodeId })).svg.startsWith('<svg'));
     assert(record(await toolJson(client, 'get_style_tokens')));
     assert.equal((await toolJson(client, 'get_asset', { hash: probe.assetHash })).hash, probe.assetHash);

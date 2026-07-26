@@ -54,11 +54,12 @@ describe('doctorBundle', () => {
 
       await unlink(join(bundle, 'assets/images/image.jpg'));
       await writeFile(join(bundle, 'tokens/colors.json'), '{');
+      await writeFile(join(bundle, 'tokens/variables.json'), '{');
       await expect(doctorBundle!(bundle)).resolves.toMatchObject({
         ok: false,
         checks: expect.arrayContaining([
           expect.objectContaining({ code: 'MISSING_INDEXED_FILE', ok: false }),
-          expect.objectContaining({ code: 'INVALID_JSON', ok: false })
+          expect.objectContaining({ code: 'INVALID_JSON', ok: false, path: 'tokens/variables.json' })
         ])
       });
     } finally {

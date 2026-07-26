@@ -5,9 +5,9 @@
   "sourceSha256": "1d7fe162dca041ace68ee3d2b339f72fdf78559b3e608a2399ccc10a4ba605ea",
   "minimums": { "nodes": 2770, "images": 40, "vectors": 67 },
   "outputSha256": {
-    "document.agent.json": "104815e8f11be73af8ae6f7a65b75b8ab01df164d2d62b918ea3fbf6e2ba8e68",
+    "document.agent.json": "75d320fa448362d414b24267f6c0e41b7dde63e1c5170a941588ff55b1925137",
     "tokens/colors.json": "52c5159db8c426e474914d5efa1c368204b834721d0a4a9e1ef79f37fba7d306",
-    "tokens/typography.json": "8f0e02ac36c54a7c5f95e51c480b2bc04f422fa2a919386b715262bb08f8c5e8",
+    "tokens/typography.json": "96e9d955d7802d318929df797c48decc59ec4dbb32613b1d00ebf99ad607dd70",
     "tokens/effects.json": "d6d0ff61cf1a54b5d5de4955acc49927db25cf5bdc8659ca18575a76def1ff93",
     "tokens/fonts.json": "ed398281c74a3453f95d384f37995a7ea3cc89824e9313277e5e4bb489b4a221",
     "assets/images.json": "96223864d9a57978559a192f29ac772f110b4d0f30aa5e707d0f0300436f2fbd",

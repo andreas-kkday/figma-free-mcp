@@ -1,4 +1,7 @@
-# fig-local-context
+# figma-free-mcp
+
+<img width="1584" height="396" alt="Copy of White and Blue Simple Gradient Business Profile LinkedIn Banner" src="https://github.com/user-attachments/assets/58e23751-4015-4ced-bc65-630dea16900a" />
+
 
 `fig-local-context` turns a locally exported Figma `.fig` file into a stable,
 agent-ready context bundle. It runs entirely on the machine that owns the
@@ -115,9 +118,9 @@ node packages/mcp-server/dist/main.js --root .figctx/design
 ```
 
 It exposes `list_frames`, `list_frame_summaries`, `search_nodes`, `get_node_context`, `get_frame_bundle`,
-`get_vector_svg`, `get_style_tokens`, `get_asset`, and `inspect_node` via stdio. Node and frame responses include
+`review_visual_match`, `get_vector_svg`, `get_style_tokens`, `get_asset`, and `inspect_node` via stdio. Node and frame responses include
 attached reference metadata when present. The server reads only bundle files
-and does not open the source `.fig` or use the network.
+plus the candidate PNG supplied to `review_visual_match`; it never opens the source `.fig`, writes to the bundle, or uses the network.
 
 Use `list_frame_summaries` or `search_nodes` to discover node IDs without loading full node records; `list_frame_summaries` returns 100 entries by default and includes `nextCursor` for the next batch (up to 200 with `limit`). `list_frames` remains available with its existing detailed response.
 
@@ -140,6 +143,20 @@ For Codex, configure the built server with absolute paths:
 }
 ```
 
+### Agent visual self-review
+
+An implementation agent should capture a same-viewport PNG after its first
+working version and again before it finishes. It calls
+`review_visual_match` with the target Figma node, the local screenshot path,
+and `phase: "midpoint"` or `phase: "final"`.
+
+The tool returns the attached Figma reference, the candidate, and a pixel diff
+as MCP image blocks, followed by a corrective prompt. Its fixed acceptance
+gate is `mismatchRatio <= 0.005` (0.5%). When `passed` is false, the agent must
+make the smallest corrective changes, take a fresh screenshot, and call the
+tool again; it must not declare the implementation complete first. Reference
+and candidate dimensions must match.
+
 `extract` creates a self-contained bundle. `inspect` and `pack` read that bundle
 only; they do not need to reopen the original `.fig` file.
 
@@ -152,7 +169,8 @@ only; they do not need to reopen the original `.fig` file.
 │   ├── colors.json
 │   ├── typography.json
 │   ├── effects.json
-│   └── fonts.json
+│   ├── fonts.json
+│   └── variables.json
 ├── assets/images/
 ├── assets/images.json
 ├── assets/thumbnail.png
@@ -182,6 +200,13 @@ only; they do not need to reopen the original `.fig` file.
   the source node IDs that produced it.
 - `tokens/fonts.json` records required font family, style, PostScript name,
   observed weight, and source node IDs. It never copies licensed system fonts.
+- `tokens/variables.json` records local Figma variable collections, modes, and
+  values when the `.fig` export contains them. Existing bundles may not have
+  this optional file; consumers return empty variables in that case.
+- Text nodes with mixed local styles expose compact `textSegments` runs in
+  `document.agent.json`; each run contains the character range, resolved
+  typography overrides, and fill override when present. Nodes also retain
+  local style references and variable bindings when the export provides them.
 - `assets/images/` contains extracted raster assets with extensions inferred
   from their real byte signatures, not from Figma's extensionless filenames.
 - `assets/images.json` maps every original image hash to its local, inferred

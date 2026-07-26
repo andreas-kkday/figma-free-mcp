@@ -27,7 +27,7 @@ test('loads inspect_node and returns a bounded summary', async () => {
     const tools = await client.listTools();
     expect(tools.tools.map((tool) => tool.name)).toEqual([
       'list_frames', 'list_frame_summaries', 'search_nodes', 'get_node_context', 'get_frame_bundle',
-      'get_vector_svg', 'get_style_tokens', 'get_asset', 'inspect_node'
+      'review_visual_match', 'get_vector_svg', 'get_style_tokens', 'get_asset', 'inspect_node'
     ]);
     const result = await client.callTool({ name: 'inspect_node', arguments: { reference: '1:1', depth: 0, maxChildren: 1 } });
     const content = result.content[0] as { type: string; text: string };

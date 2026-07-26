@@ -52,6 +52,8 @@ export async function doctorBundle(bundle: string): Promise<BundleDoctorReport> 
   checkContract(json.get('manifest.json'), 'manifest.json', checks);
   checkContract(json.get('document.agent.json'), 'document.agent.json', checks);
   for (const path of ['tokens/colors.json', 'tokens/typography.json', 'tokens/effects.json', 'tokens/fonts.json', 'assets/images.json', 'assets/vectors.json']) checkContract(json.get(path), path, checks);
+  const variables = await readJson(root, 'tokens/variables.json', checks, false);
+  if (variables !== undefined) checkContract(variables, 'tokens/variables.json', checks);
   await checkIndexedFiles(root, json.get('assets/images.json'), 'images', checks);
   await checkIndexedFiles(root, json.get('assets/vectors.json'), 'vectors', checks);
 
