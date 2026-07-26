@@ -100,7 +100,7 @@ async function exerciseMcp(bundle, probe, thumbnail) {
   try {
     await client.connect(transport);
     const tools = await client.listTools();
-    assert.deepEqual(tools.tools.map((tool) => tool.name), ['list_frames', 'list_frame_summaries', 'search_nodes', 'get_node_context', 'get_frame_bundle', 'review_visual_match', 'get_vector_svg', 'get_style_tokens', 'get_asset']);
+    assert.deepEqual(tools.tools.map((tool) => tool.name), ['list_frames', 'list_frame_summaries', 'search_nodes', 'get_node_context', 'get_frame_bundle', 'review_visual_match', 'get_vector_svg', 'get_style_tokens', 'get_asset', 'inspect_node']);
     assert(Array.isArray(await toolJson(client, 'list_frames')));
     assert(Array.isArray((await toolJson(client, 'list_frame_summaries', { limit: 1 })).items));
     assert((await toolJson(client, 'search_nodes', { query: probe.query, limit: 1 })).length > 0);
@@ -112,6 +112,7 @@ async function exerciseMcp(bundle, probe, thumbnail) {
     assert((await toolJson(client, 'get_vector_svg', { reference: probe.vectorNodeId })).svg.startsWith('<svg'));
     assert(record(await toolJson(client, 'get_style_tokens')));
     assert.equal((await toolJson(client, 'get_asset', { hash: probe.assetHash })).hash, probe.assetHash);
+    assert.equal((await toolJson(client, 'inspect_node', { reference: probe.rootId, depth: 0, maxChildren: 1 })).selection.id, probe.rootId);
   } finally {
     await client.close();
   }

@@ -11,6 +11,7 @@ export { vectorNetworkToSvg, type VectorSize } from './vectors/svg.js';
 export { composeFrameSvg, composeVectorGroupSvg, composeBundleVectorGroupSvg, findVectorGroups, type VectorGroup } from './vectors/frame.js';
 export { extractFig, type ExtractionResult } from './extract.js';
 export { buildNodeContext, type NodeContext } from './context/node-context.js';
+export { inspectNode, type InspectNodeOptions, type InspectNodeLimits, type InspectedNode, type NodeInspection } from './context/inspect-node.js';
 export { comparePng, describePng, type PixelComparison, type PngDescription } from './visual/compare.js';
 export { auditFontRequirements, type AvailableFont, type FontAudit } from './visual/fonts.js';
 export { doctorBundle, searchNodes, type BundleDoctorReport, type DoctorCheck, type NodeSearchOptions, type NodeSearchResult } from './discovery.js';

@@ -118,13 +118,30 @@ node packages/mcp-server/dist/main.js --root .figctx/design
 ```
 
 It exposes `list_frames`, `list_frame_summaries`, `search_nodes`, `get_node_context`, `get_frame_bundle`,
-`review_visual_match`, `get_vector_svg`, `get_style_tokens`, and `get_asset` via stdio. Node and frame responses include
+`review_visual_match`, `get_vector_svg`, `get_style_tokens`, `get_asset`, and `inspect_node` via stdio. Node and frame responses include
 attached reference metadata when present. The server reads only bundle files
 plus the candidate PNG supplied to `review_visual_match`; it never opens the source `.fig`, writes to the bundle, or uses the network.
 
 Use `list_frame_summaries` or `search_nodes` to discover node IDs without loading full node records; `list_frame_summaries` returns 100 entries by default and includes `nextCursor` for the next batch (up to 200 with `limit`). `list_frames` remains available with its existing detailed response.
 
-`get_frame_bundle` uses the same full-subtree contract as `figctx pack`.
+Use `inspect_node` for a compact, bounded preview before implementation. It accepts a node reference plus optional `depth` (default 2, maximum 5) and `maxChildren` (default 20, maximum 100); its response reports omitted descendants and summarizes images/vectors without exposing asset paths or hashes. Use `get_frame_bundle` only when implementing a section or page: it uses the same complete-subtree contract as `figctx pack`.
+
+For Codex, configure the built server with absolute paths:
+
+```json
+{
+  "mcpServers": {
+    "figctx": {
+      "command": "node",
+      "args": [
+        "/absolute/path/to/fig-context-extracter/packages/mcp-server/dist/main.js",
+        "--root",
+        "/absolute/path/to/project/.figctx/design"
+      ]
+    }
+  }
+}
+```
 
 ### Agent visual self-review
 
