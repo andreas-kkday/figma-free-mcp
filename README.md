@@ -115,13 +115,30 @@ node packages/mcp-server/dist/main.js --root .figctx/design
 ```
 
 It exposes `list_frames`, `list_frame_summaries`, `search_nodes`, `get_node_context`, `get_frame_bundle`,
-`get_vector_svg`, `get_style_tokens`, and `get_asset` via stdio. Node and frame responses include
+`get_vector_svg`, `get_style_tokens`, `get_asset`, and `inspect_node` via stdio. Node and frame responses include
 attached reference metadata when present. The server reads only bundle files
 and does not open the source `.fig` or use the network.
 
 Use `list_frame_summaries` or `search_nodes` to discover node IDs without loading full node records; `list_frame_summaries` returns 100 entries by default and includes `nextCursor` for the next batch (up to 200 with `limit`). `list_frames` remains available with its existing detailed response.
 
-`get_frame_bundle` uses the same full-subtree contract as `figctx pack`.
+Use `inspect_node` for a compact, bounded preview before implementation. It accepts a node reference plus optional `depth` (default 2, maximum 5) and `maxChildren` (default 20, maximum 100); its response reports omitted descendants and summarizes images/vectors without exposing asset paths or hashes. Use `get_frame_bundle` only when implementing a section or page: it uses the same complete-subtree contract as `figctx pack`.
+
+For Codex, configure the built server with absolute paths:
+
+```json
+{
+  "mcpServers": {
+    "figctx": {
+      "command": "node",
+      "args": [
+        "/absolute/path/to/fig-context-extracter/packages/mcp-server/dist/main.js",
+        "--root",
+        "/absolute/path/to/project/.figctx/design"
+      ]
+    }
+  }
+}
+```
 
 `extract` creates a self-contained bundle. `inspect` and `pack` read that bundle
 only; they do not need to reopen the original `.fig` file.
@@ -254,6 +271,31 @@ The test suite has three layers:
 3. A local-only acceptance test enabled with `FIGCTX_ACCEPTANCE_FIG`. It checks
    successful decode of a real export without copying, snapshotting, printing,
    or committing the design or its output.
+
+### Private real-export CI
+
+`Real Figma acceptance` runs on same-repository pull requests to `main` and on
+manual dispatch. Fork pull requests run the normal CI only, so they never
+receive the private fixture credential. The acceptance job downloads an
+immutable release asset from a separate private repository, verifies its
+SHA-256, extracts it, compares hashes of safe bundle outputs, and exercises all
+CLI and MCP tools without printing or uploading design data.
+
+One-time GitHub setup:
+
+1. Create a private test-data repository and publish the export as the release
+   asset named by `tests/acceptance/fixture-contract.json`.
+2. Set `FIGCTX_TEST_DATA_REPOSITORY` as a repository variable and
+   `FIGCTX_TEST_DATA_TOKEN` as a fine-grained, read-only token with access only
+   to that private repository.
+3. Protect `main` and require both the existing CI check and
+   `Real Figma acceptance / real-fig` for internal pull requests.
+
+To rotate the fixture, publish a new immutable release asset, run
+`FIGCTX_ACCEPTANCE_FIG=/path/to/figctx-acceptance.fig pnpm test:real-fig`
+locally after updating the contract hashes, and review only the resulting
+checksum/count diff. Never commit the `.fig`, generated bundle, logs, or
+workflow artifacts.
 
 ## Non-goals for the first release
 
