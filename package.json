@@ -10,10 +10,11 @@
   },
   "scripts": {
     "build": "pnpm -r run build",
-    "test": "node --test tools/check-secrets.test.mjs tools/real-fig-smoke.test.mjs && pnpm -r run test",
+    "test": "node --test tools/check-secrets.test.mjs tools/package-manifest.test.mjs tools/real-fig-smoke.test.mjs && pnpm -r run test",
     "typecheck": "pnpm -r run typecheck",
     "check:secrets": "node tools/check-secrets.mjs",
-    "check": "pnpm build && pnpm typecheck && pnpm test && git diff --check && git diff --cached --check && pnpm check:secrets",
+    "package:smoke": "pnpm build && node tools/package-smoke.mjs",
+    "check": "pnpm build && pnpm typecheck && pnpm test && pnpm package:smoke && git diff --check && git diff --cached --check && pnpm check:secrets",
     "test:real-fig": "node tools/real-fig-smoke.mjs"
   },
   "devDependencies": {

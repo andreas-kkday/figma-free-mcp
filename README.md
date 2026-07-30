@@ -36,16 +36,52 @@ figctx render .figctx/design --node <node-id> > artwork.svg
 
 ## Install and use
 
-Requires Node.js 20+ and pnpm. From a checkout:
+Requires Node.js 20 or newer. No checkout or build is needed for normal use.
+
+Run the CLI without installing it globally:
+
+```sh
+npx -y figctx@0.1.0 extract design.fig --out .figctx/design
+npx -y figctx@0.1.0 inspect .figctx/design --node '1-2'
+npx -y figctx@0.1.0 pack .figctx/design --node 'https://www.figma.com/design/file/name?node-id=1-2' --format codex
+npx -y figctx@0.1.0 render .figctx/design --node '1-2' > artwork.svg
+```
+
+Or install both local tools once:
+
+```sh
+npm install --global figctx
+figctx extract design.fig --out .figctx/design
+figctx-mcp --root "$PWD/.figctx/design"
+```
+
+The npm distribution contains Node.js executables, not native platform
+binaries. Use an exact package version in MCP configuration so a design agent
+has a repeatable tool contract.
+
+### Contributor setup
+
+Contributors need pnpm as well as Node.js 20+:
 
 ```sh
 pnpm install
 pnpm build
 node packages/cli/dist/main.js extract design.fig --out .figctx/design
-node packages/cli/dist/main.js inspect .figctx/design --node '1-2'
-node packages/cli/dist/main.js pack .figctx/design --node 'https://www.figma.com/design/file/name?node-id=1-2' --format codex
-node packages/cli/dist/main.js render .figctx/design --node '1-2' > artwork.svg
 ```
+
+### Releasing
+
+Public versions follow Semantic Versioning. Update `packages/cli/package.json`
+and `CHANGELOG.md` in the release pull request, merge it, then create the
+matching protected tag (`vX.Y.Z`). The publish workflow runs the complete
+check, creates the npm tarball, publishes it, and attaches the tarball plus
+SHA-256 to the GitHub Release.
+
+For the first `0.1.0` publication, an npm owner must publish the tarball
+manually with 2FA. Afterwards configure npm Trusted Publishing for
+`symonbaikov/figma-free-mcp`, workflow file `publish.yml`, and the
+`npm-publish` GitHub environment; future tags publish with GitHub OIDC and no
+long-lived npm token.
 
 ## Prompt examples
 
@@ -114,7 +150,7 @@ whole section or page, while `inspect` remains a concise single-node lookup.
 Start the MCP server after extraction:
 
 ```sh
-node packages/mcp-server/dist/main.js --root .figctx/design
+npx -y --package figctx@0.1.0 figctx-mcp --root "$PWD/.figctx/design"
 ```
 
 It exposes `list_frames`, `list_frame_summaries`, `search_nodes`, `get_node_context`, `get_frame_bundle`,
@@ -126,17 +162,41 @@ Use `list_frame_summaries` or `search_nodes` to discover node IDs without loadin
 
 Use `inspect_node` for a compact, bounded preview before implementation. It accepts a node reference plus optional `depth` (default 2, maximum 5) and `maxChildren` (default 20, maximum 100); its response reports omitted descendants and summarizes images/vectors without exposing asset paths or hashes. Use `get_frame_bundle` only when implementing a section or page: it uses the same complete-subtree contract as `figctx pack`.
 
-For Codex, configure the built server with absolute paths:
+For Codex, configure the npm package with an exact version and absolute bundle
+path:
 
 ```json
 {
   "mcpServers": {
     "figctx": {
-      "command": "node",
+      "command": "npx",
       "args": [
-        "/absolute/path/to/fig-context-extracter/packages/mcp-server/dist/main.js",
+        "-y",
+        "--package",
+        "figctx@0.1.0",
+        "figctx-mcp",
         "--root",
-        "/absolute/path/to/project/.figctx/design"
+        "/absolute/path/to/design.figctx"
+      ]
+    }
+  }
+}
+```
+
+For Claude Desktop, put the same server command in its configuration file:
+
+```json
+{
+  "mcpServers": {
+    "figctx": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "--package",
+        "figctx@0.1.0",
+        "figctx-mcp",
+        "--root",
+        "/absolute/path/to/design.figctx"
       ]
     }
   }
