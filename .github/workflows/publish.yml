@@ -1,0 +1,48 @@
+name: Publish figctx
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: npm-publish
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.14.0
+          registry-url: https://registry.npmjs.org
+          cache: pnpm
+      - name: Verify release tag matches the package version
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          package_version=$(node -p "require('./packages/cli/package.json').version")
+          test "$RELEASE_TAG" = "v$package_version"
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - name: Pack release artifact
+        run: |
+          mkdir release
+          pnpm --filter figctx pack --pack-destination "$PWD/release"
+          find release -name '*.tgz' -print -quit | grep .
+          sha256sum release/*.tgz > release/figctx.sha256
+      - name: Publish to npm with trusted publishing
+        run: npm publish release/*.tgz --access public
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: gh release create "$RELEASE_TAG" release/*.tgz release/figctx.sha256 --generate-notes
