@@ -13,8 +13,9 @@ export const publicToolNames = {
 } as const;
 
 export const publicToolSchemas = {
-  list_frame_summaries: { cursor: z.number().int().nonnegative().optional(), limit: z.number().int().positive().max(200).optional() },
-  search_nodes: { query: z.string(), type: z.string().optional(), limit: z.number().int().positive().optional() },
+  list_frames: { cursor: z.number().int().nonnegative().optional(), limit: z.number().int().positive().max(30).optional() },
+  list_frame_summaries: { cursor: z.number().int().nonnegative().optional(), limit: z.number().int().positive().max(30).optional() },
+  search_nodes: { query: z.string(), type: z.string().optional(), limit: z.number().int().positive().max(30).optional() },
   get_node_context: { reference: z.string() },
   get_frame_bundle: { reference: z.string() },
   get_vector_svg: { reference: z.string() },

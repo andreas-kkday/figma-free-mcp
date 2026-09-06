@@ -5,7 +5,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { buildNodeContext, comparePng, composeBundleVectorGroupSvg, inspectNode, resolveNodeReference, searchNodes, type AgentDocument } from '@figctx/core';
 import { z } from 'zod';
-import { pageFrameSummaries } from './frame-summaries.js';
+import { pageFrameSummaries, pageFrames } from './frame-summaries.js';
 import { buildVisualReview, type ReviewPhase } from './review.js';
 import { publicToolNames, publicToolSchemas } from './tool-schemas.js';
 
@@ -20,7 +20,7 @@ const variableFile = await loadVariables();
 const referenceIndex = await loadReferences();
 const server = new McpServer({ name: 'figctx-mcp', version: '0.1.0' });
 const text = (value: unknown) => ({ content: [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }] });
-server.registerTool(publicToolNames.listFrames, { description: 'List locally extracted frames and canvases.' }, async () => text(Object.values(document.nodesById).filter((n) => n.type === 'FRAME' || n.type === 'CANVAS')));
+server.registerTool(publicToolNames.listFrames, { description: 'List locally extracted frames and canvases in extracted order.', inputSchema: publicToolSchemas.list_frames }, async ({ cursor, limit }) => text(pageFrames(document, { cursor, limit })));
 server.registerTool(publicToolNames.listFrameSummaries, { description: 'List compact frame and canvas summaries in sequential batches.', inputSchema: publicToolSchemas.list_frame_summaries }, async ({ cursor, limit }) => text(pageFrameSummaries(document, new Set(referenceIndex.references.map((reference) => reference.nodeId)), { cursor, limit })));
 server.registerTool(publicToolNames.searchNodes, { description: 'Search local nodes by case-insensitive name or text substring.', inputSchema: publicToolSchemas.search_nodes }, async ({ query, type, limit }) => text(searchNodes(document, query, { type, limit })));
 server.registerTool(publicToolNames.getNodeContext, { description: 'Resolve a local node ID or Figma URL, including an attached reference PNG if available.', inputSchema: publicToolSchemas.get_node_context }, async ({ reference }) => { const node = resolveNodeReference(document, reference); return text({ node, reference: referenceIndex.references.find((item) => item.nodeId === node.id) }); });
