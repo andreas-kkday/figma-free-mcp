@@ -14,6 +14,18 @@ describe('normalized document', () => {
     expect(document.nodesById['1:3']).toMatchObject({ text: 'Hello', parentId: '1:2' });
   });
 
+  test('materializes children from an externally referenced symbol', () => {
+    const normalized = normalizeDocument([
+      { guid: { sessionID: 9, localID: 1 }, type: 'INSTANCE', symbolData: { symbolID: { sessionID: 8, localID: 10 } } },
+      { guid: { sessionID: 8, localID: 10 }, type: 'SYMBOL' },
+      { guid: { sessionID: 8, localID: 11 }, type: 'TEXT', parentIndex: 1, textData: { characters: 'Library text' } }
+    ]);
+    const instance = normalized.nodesById['9:1']!;
+    expect(instance).toMatchObject({ node_id: '9:1', main_component_id: '8:10' });
+    expect(instance.childIds).toEqual(['9:1/component/8:11']);
+    expect(normalized.nodesById['9:1/component/8:11']).toMatchObject({ id: '9:1/component/8:11', node_id: '8:11', main_component_id: '8:10', parentId: '9:1', text: 'Library text', childIds: [] });
+  });
+
   test.each(['1:3', '1-3', 'https://www.figma.com/design/file/name?node-id=1-3'])
   ('resolves %s', (reference) => expect(resolveNodeReference(document, reference).id).toBe('1:3'));
 

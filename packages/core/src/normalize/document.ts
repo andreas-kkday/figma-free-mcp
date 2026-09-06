@@ -1,7 +1,11 @@
 import { FigctxError } from '../errors.js';
 
 export interface AgentNode {
+  /** Contextual ID. Materialized component descendants use a scoped ID. */
   id: string;
+  /** Original Figma node ID, kept stable when `id` is scoped. */
+  node_id: string;
+  main_component_id?: string;
   name: string;
   type: string;
   parentId?: string;
@@ -57,8 +61,55 @@ export function normalizeDocument(changes: readonly Record<string, unknown>[], o
     if (!parent || parent.id === node.id) roots.push(node.id);
     else { node.parentId = parent.id; parent.childIds.push(node.id); }
   });
+
+  // Figma stores instances of library components without their instance
+  // children.  The matching SYMBOL is commonly embedded in the same canvas,
+  // even though its session ID differs. Materialize that subtree under the
+  // instance so consumers do not lose the component's content.
+  materializeExternalInstances(nodesById, changes);
   return { contractVersion: '1', ...(options.originFileKey ? { originFileKey: options.originFileKey } : {}), rootIds: roots, nodesById };
 }
+
+function materializeExternalInstances(nodesById: Record<string, AgentNode>, changes: readonly Record<string, unknown>[]): void {
+  const originals = Object.values(nodesById);
+  for (const instance of originals) {
+    if (instance.type !== 'INSTANCE' || instance.childIds.length > 0) continue;
+    const sourceId = guidId(record(record(changes[instance.zIndex]?.symbolData)?.symbolID));
+    const source = sourceId ? nodesById[sourceId] : undefined;
+    if (!source || source.type !== 'SYMBOL') continue;
+
+    const sourceIds = new Set<string>();
+    const collect = (id: string) => {
+      if (sourceIds.has(id)) return;
+      const node = nodesById[id];
+      if (!node) return;
+      sourceIds.add(id);
+      node.childIds.forEach(collect);
+    };
+    source.childIds.forEach(collect);
+
+    const clonedIds = new Map<string, string>();
+    for (const id of sourceIds) {
+      // Always scope the stable source node ID. A source node may itself have
+      // come from a materialized component, so using its contextual `id` here
+      // would produce paths such as `/component/.../component/...`.
+      const sourceNode = nodesById[id]!;
+      clonedIds.set(id, `${instance.id}/component/${sourceNode.node_id}`);
+    }
+    for (const id of sourceIds) {
+      const original = nodesById[id]!;
+      const clone: AgentNode = structuredClone(original);
+      clone.id = clonedIds.get(id)!;
+      clone.node_id = original.node_id;
+      clone.main_component_id = sourceId;
+      clone.parentId = original.parentId === source.id ? instance.id : clonedIds.get(original.parentId ?? '');
+      clone.childIds = original.childIds.flatMap((childId) => clonedIds.get(childId) ? [clonedIds.get(childId)!] : []);
+      nodesById[clone.id] = clone;
+    }
+    instance.childIds = source.childIds.flatMap((id) => clonedIds.get(id) ? [clonedIds.get(id)!] : []);
+  }
+}
+
 
 export function resolveNodeReference(document: AgentDocument, reference: string): AgentNode {
   const urlFileKey = fileKeyFromReference(reference);
@@ -100,8 +151,9 @@ function normalizeNode(change: Record<string, unknown>, zIndex: number, assetPat
   const segments = textSegments(textData, typography, change.fillPaints);
   const styles = styleReferences(change);
   const bindings = variableBindings(change);
+  const mainComponentId = guidId(record(record(change.symbolData)?.symbolID));
   return {
-    id, name: typeof change.name === 'string' ? change.name : id, type: typeof change.type === 'string' ? change.type : 'UNKNOWN', childIds: [], zIndex,
+    id, node_id: id, ...(mainComponentId ? { main_component_id: mainComponentId } : {}), name: typeof change.name === 'string' ? change.name : id, type: typeof change.type === 'string' ? change.type : 'UNKNOWN', childIds: [], zIndex,
     ...(typeof textData?.characters === 'string' ? { text: textData.characters } : {}), ...(segments ? { textSegments: segments } : {}), ...(textLayout && Object.keys(textLayout).length ? { textLayout } : {}),
     ...(change.size === undefined ? {} : { bounds: change.size }), ...(change.transform === undefined ? {} : { transform: change.transform }),
     ...(typeof change.visible === 'boolean' ? { visible: change.visible } : {}), ...(typeof change.opacity === 'number' ? { opacity: change.opacity } : {}), ...(change.blendMode === undefined ? {} : { blendMode: change.blendMode }), ...(typeof change.mask === 'boolean' ? { mask: change.mask } : {}), ...(typeof change.frameMaskDisabled === 'boolean' ? { frameMaskDisabled: change.frameMaskDisabled } : {}), constraints: { horizontal: change.horizontalConstraint, vertical: change.verticalConstraint },
