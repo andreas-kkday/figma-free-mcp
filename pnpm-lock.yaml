@@ -105,20 +105,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
-overrides:
-  cli: link:../../Library/pnpm/global/11/node_modules/packages/cli
-  figctx: link:packages/cli
-
 importers:
 
   .:
-    dependencies:
-      cli:
-        specifier: link:../../Library/pnpm/global/11/node_modules/packages/cli
-        version: link:../../Library/pnpm/global/11/node_modules/packages/cli
-      figctx:
-        specifier: link:packages/cli
-        version: link:packages/cli
     devDependencies:
       '@types/node':
         specifier: ^22.15.3
@@ -203,15 +192,31 @@ importers:
 
   packages/mcp-server:
     dependencies:
-      '@figctx/core':
-        specifier: workspace:*
-        version: link:../core
       '@modelcontextprotocol/sdk':
         specifier: ^1.20.0
         version: 1.30.0(zod@4.5.4)
+      fzstd:
+        specifier: 0.1.1
+        version: 0.1.1
+      kiwi-schema:
+        specifier: 0.5.0
+        version: 0.5.0
+      pixelmatch:
+        specifier: ^7.2.0
+        version: 7.2.0
+      pngjs:
+        specifier: ^7.0.0
+        version: 7.0.0
+      yauzl:
+        specifier: ^3.4.0
+        version: 3.4.0
       zod:
         specifier: ^4.4.3
         version: 4.5.4
+    devDependencies:
+      esbuild:
+        specifier: 0.28.1
+        version: 0.28.1
 
 packages:
 

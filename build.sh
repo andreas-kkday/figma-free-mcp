@@ -7,7 +7,7 @@ package_dir="$(pwd)/packages/cli"
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
 
-npm pack "$package_dir" --pack-destination "$tmp_dir" --silent
+pnpm --dir "$package_dir" pack --pack-destination "$tmp_dir"
 tarball="$(find "$tmp_dir" -maxdepth 1 -name '*.tgz' -print -quit)"
 
-npm install --global "$tarball"
+pnpm add --global "$tarball"

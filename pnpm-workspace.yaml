@@ -6,6 +6,3 @@ allowBuilds:
 
 onlyBuiltDependencies:
   - esbuild
-overrides:
-  cli: link:../../Library/pnpm/global/11/node_modules/packages/cli
-  figctx: link:packages/cli
