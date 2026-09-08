@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { hashToHex, normalizeDocument, resolveNodeReference } from '../src/normalize/document.js';
+import { effectiveChildIds, hashToHex, normalizeDocument, resolveNodeReference } from '../src/normalize/document.js';
 import { buildNodeContext } from '../src/context/node-context.js';
 
 const document = normalizeDocument([
@@ -9,6 +9,12 @@ const document = normalizeDocument([
 ]);
 
 describe('normalized document', () => {
+  test('prefers non-empty resolved children and falls back to raw children', () => {
+    const node = { childIds: ['raw'], resolvedChildIds: ['resolved'] } as Parameters<typeof effectiveChildIds>[0];
+    expect(effectiveChildIds(node)).toEqual(['resolved']);
+    expect(effectiveChildIds({ ...node, resolvedChildIds: [] })).toEqual(['raw']);
+  });
+
   test('builds stable IDs, hierarchy, and text context', () => {
     expect(document.nodesById['1:2']).toMatchObject({ id: '1:2', type: 'FRAME', childIds: ['1:3'] });
     expect(document.nodesById['1:3']).toMatchObject({ text: 'Hello', parentId: '1:2' });

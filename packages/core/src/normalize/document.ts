@@ -6,6 +6,8 @@ export interface AgentNode {
   /** Original Figma node ID, kept stable when `id` is scoped. */
   node_id: string;
   main_component_id?: string;
+  /** Expanded child IDs when an INSTANCE has a resolved component subtree. */
+  resolvedChildIds?: string[];
   name: string;
   type: string;
   parentId?: string;
@@ -110,6 +112,10 @@ function materializeExternalInstances(nodesById: Record<string, AgentNode>, chan
   }
 }
 
+/** Returns the child IDs consumers should traverse after local expansion. */
+export function effectiveChildIds(node: AgentNode): string[] {
+  return node.resolvedChildIds?.length ? node.resolvedChildIds : node.childIds;
+}
 
 export function resolveNodeReference(document: AgentDocument, reference: string): AgentNode {
   const urlFileKey = fileKeyFromReference(reference);

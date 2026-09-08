@@ -3,7 +3,7 @@ import { copyFile, mkdir, readFile, readdir, rename, writeFile } from 'node:fs/p
 import { dirname, join, resolve } from 'node:path';
 import { openSync } from 'fontkit';
 import { Command } from 'commander';
-import { auditFontRequirements, buildNodeContext, comparePng, composeBundleVectorGroupSvg, describePng, doctorBundle, extractFig, FigctxError, resolveNodeReference, searchNodes, type AgentDocument, type AvailableFont, type FontRequirement } from '@figctx/core';
+import { auditFontRequirements, buildNodeContext, comparePng, composeBundleVectorGroupSvg, describePng, doctorBundle, effectiveChildIds, extractFig, FigctxError, resolveNodeReference, searchNodes, type AgentDocument, type AgentNode, type AvailableFont, type FontRequirement } from '@figctx/core';
 import { mismatchRatio, positiveInteger } from './options.js';
 
 const program = new Command().name('figctx').description('Extract local Figma .fig context bundles');
@@ -12,10 +12,10 @@ program.command('extract <file>').requiredOption('--out <directory>').action(asy
   process.stdout.write(JSON.stringify({ out: result.outDir, nodes: Object.keys(result.agent.nodesById).length }) + '\n');
 });
 program.command('resolve <bundle> <reference>').action(async (bundle, reference) => {
-  const document = await loadDocument(bundle); process.stdout.write(JSON.stringify(resolveNodeReference(document, reference), null, 2) + '\n');
+  const document = await loadDocument(bundle); process.stdout.write(JSON.stringify(presentNode(resolveNodeReference(document, reference)), null, 2) + '\n');
 });
 program.command('inspect <bundle>').requiredOption('--node <reference>').action(async (bundle, options) => {
-  const document = await loadDocument(bundle); process.stdout.write(JSON.stringify(resolveNodeReference(document, options.node), null, 2) + '\n');
+  const document = await loadDocument(bundle); process.stdout.write(JSON.stringify(presentNode(resolveNodeReference(document, options.node)), null, 2) + '\n');
 });
 program.command('search <bundle> <query>').option('--type <type>', 'Filter by node type').option('--limit <number>', 'Maximum results', positiveInteger).action(async (bundle, query, options) => {
   const document = await loadDocument(bundle); process.stdout.write(JSON.stringify(searchNodes(document, query, options), null, 2) + '\n');
@@ -70,6 +70,9 @@ async function loadReferences(bundle: string): Promise<{ references: ReferenceEn
 async function loadVariables(bundle: string): Promise<{ collections: unknown[]; ungrouped: unknown[] }> { try { return JSON.parse(await readFile(join(bundle, 'tokens/variables.json'), 'utf8')) as { collections: unknown[]; ungrouped: unknown[] }; } catch (error: unknown) { if ((error as { code?: string }).code === 'ENOENT') return { collections: [], ungrouped: [] }; throw error; } }
 async function writeJsonAtomic(path: string, value: unknown) { const temporary = `${path}.tmp-${process.pid}-${Date.now()}`; await writeFile(temporary, JSON.stringify(value, null, 2)); await rename(temporary, path); }
 function safeName(value: string) { return value.replace(/[^a-zA-Z0-9._-]/g, '_'); }
+function presentNode(node: AgentNode): AgentNode & { effectiveChildIds: string[] } {
+  return { ...node, effectiveChildIds: effectiveChildIds(node) };
+}
 async function readFonts(directory: string): Promise<AvailableFont[]> {
   const files = await fontFiles(directory); const fonts: AvailableFont[] = [];
   for (const path of files) { try { const opened = openSync(path); const family = 'fonts' in opened ? opened.fonts : [opened]; for (const font of family) fonts.push({ family: font.familyName, style: font.subfamilyName, postscript: font.postscriptName, path }); } catch { /* malformed or unsupported font is ignored; it cannot satisfy a requirement */ } }
