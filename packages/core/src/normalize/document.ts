@@ -65,15 +65,16 @@ export function normalizeDocument(changes: readonly Record<string, unknown>[], o
   });
 
   // Figma stores instances of library components without their instance
-  // children.  The matching SYMBOL is commonly embedded in the same canvas,
+  // children. The matching SYMBOL is commonly embedded in the same canvas,
   // even though its session ID differs. Materialize that subtree under the
-  // instance so consumers do not lose the component's content.
+  // instance so consumers do not lose component content or instance overrides.
   materializeExternalInstances(nodesById, changes);
   return { contractVersion: '1', ...(options.originFileKey ? { originFileKey: options.originFileKey } : {}), rootIds: roots, nodesById };
 }
 
 function materializeExternalInstances(nodesById: Record<string, AgentNode>, changes: readonly Record<string, unknown>[]): void {
   const originals = Object.values(nodesById);
+  const rawChildIds = new Map(originals.map((node) => [node.id, [...node.childIds]] as const));
   for (const instance of originals) {
     if (instance.type !== 'INSTANCE' || instance.childIds.length > 0) continue;
     const sourceId = guidId(record(record(changes[instance.zIndex]?.symbolData)?.symbolID));
@@ -81,20 +82,31 @@ function materializeExternalInstances(nodesById: Record<string, AgentNode>, chan
     if (!source || source.type !== 'SYMBOL') continue;
 
     const sourceIds = new Set<string>();
+    const childrenFor = (id: string): string[] => {
+      const raw = rawChildIds.get(id) ?? [];
+      if (raw.length) return [...raw];
+      const node = nodesById[id];
+      const nestedSourceId = node?.type === 'INSTANCE' ? guidId(record(record(changes[node.zIndex]?.symbolData)?.symbolID)) : undefined;
+      return nestedSourceId ? [...(rawChildIds.get(nestedSourceId) ?? [])] : [];
+    };
     const collect = (id: string) => {
       if (sourceIds.has(id)) return;
       const node = nodesById[id];
       if (!node) return;
       sourceIds.add(id);
-      node.childIds.forEach(collect);
+      childrenFor(id).forEach(collect);
     };
-    source.childIds.forEach(collect);
+    childrenFor(source.id).forEach(collect);
 
+    const overrides = new Map<string, Record<string, unknown>>();
+    for (const id of sourceIds) {
+      const nested = nodesById[id];
+      if (nested?.type !== 'INSTANCE') continue;
+      for (const [nodeId, override] of symbolOverrides(changes[nested.zIndex])) overrides.set(nodeId, override);
+    }
+    for (const [nodeId, override] of symbolOverrides(changes[instance.zIndex])) overrides.set(nodeId, override);
     const clonedIds = new Map<string, string>();
     for (const id of sourceIds) {
-      // Always scope the stable source node ID. A source node may itself have
-      // come from a materialized component, so using its contextual `id` here
-      // would produce paths such as `/component/.../component/...`.
       const sourceNode = nodesById[id]!;
       clonedIds.set(id, `${instance.id}/component/${sourceNode.node_id}`);
     }
@@ -105,10 +117,14 @@ function materializeExternalInstances(nodesById: Record<string, AgentNode>, chan
       clone.node_id = original.node_id;
       clone.main_component_id = sourceId;
       clone.parentId = original.parentId === source.id ? instance.id : clonedIds.get(original.parentId ?? '');
-      clone.childIds = original.childIds.flatMap((childId) => clonedIds.get(childId) ? [clonedIds.get(childId)!] : []);
+      clone.childIds = childrenFor(original.id).flatMap((childId) => clonedIds.get(childId) ? [clonedIds.get(childId)!] : []);
+      if (clone.type === 'INSTANCE') clone.resolvedChildIds = [...clone.childIds];
+      else delete clone.resolvedChildIds;
+      applySymbolOverride(clone, overrides.get(original.node_id));
       nodesById[clone.id] = clone;
     }
-    instance.childIds = source.childIds.flatMap((id) => clonedIds.get(id) ? [clonedIds.get(id)!] : []);
+    instance.resolvedChildIds = childrenFor(source.id).flatMap((id) => clonedIds.get(id) ? [clonedIds.get(id)!] : []);
+    instance.childIds = [...instance.resolvedChildIds];
   }
 }
 
@@ -118,6 +134,8 @@ export function effectiveChildIds(node: AgentNode): string[] {
 }
 
 export function resolveNodeReference(document: AgentDocument, reference: string): AgentNode {
+  const direct = document.nodesById[reference];
+  if (direct) return direct;
   const urlFileKey = fileKeyFromReference(reference);
   if (urlFileKey && document.originFileKey && urlFileKey !== document.originFileKey) throw new FigctxError('NODE_REFERENCE_FILE_MISMATCH', `Figma URL belongs to ${urlFileKey}, but this bundle is for ${document.originFileKey}.`);
   const id = canonicalNodeId(reference);
@@ -144,6 +162,30 @@ function extractUrlNodeId(reference: string): string {
 function fileKeyFromReference(reference: string): string | undefined {
   if (!reference.includes('://')) return undefined;
   try { const match = new URL(reference).pathname.match(/\/(?:design|file)\/([^/?#]+)/i); return match?.[1] ? decodeURIComponent(match[1]) : undefined; } catch { return undefined; }
+}
+
+function symbolOverrides(change: Record<string, unknown> | undefined): Map<string, Record<string, unknown>> {
+  const entries = record(change?.symbolData)?.symbolOverrides;
+  const values = Array.isArray(entries) ? entries : [];
+  return new Map(values.flatMap((value) => {
+    const override = record(value);
+    const path = record(override?.guidPath)?.guids;
+    if (!Array.isArray(path) || !path.length) return [];
+    const leaf = path[path.length - 1];
+    const nodeId = guidId(leaf);
+    return nodeId && override ? [[nodeId, override] as const] : [];
+  }));
+}
+
+function applySymbolOverride(node: AgentNode, override: Record<string, unknown> | undefined): void {
+  if (!override) return;
+  const textData = record(override.textData);
+  if (typeof textData?.characters === 'string') {
+    node.text = textData.characters;
+    delete node.textSegments;
+  }
+  if (typeof override.visible === 'boolean') node.visible = override.visible;
+  if (typeof override.name === 'string') node.name = override.name;
 }
 
 function normalizeNode(change: Record<string, unknown>, zIndex: number, assetPaths: Readonly<Record<string, string>> | undefined, vectorPaths: Readonly<Record<number, string>> | undefined, vectorSvgPaths: Readonly<Record<number, string>> | undefined): AgentNode {
