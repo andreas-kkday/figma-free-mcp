@@ -225,6 +225,7 @@ only; they do not need to reopen the original `.fig` file.
 ├── manifest.json
 ├── document.raw.json
 ├── document.agent.json
+├── schema.kiwi.bin
 ├── tokens/
 │   ├── colors.json
 │   ├── typography.json
@@ -251,7 +252,10 @@ only; they do not need to reopen the original `.fig` file.
   versions, detected variants, extraction status, and warnings.
 - `document.raw.json` is the decoded Kiwi document for diagnostics. Large binary
   blobs remain files or references, not base64 JSON payloads.
-- `document.agent.json` is the stable normalized layer tree. Nodes retain IDs,
+- `document.agent.json` is the stable normalized layer tree.
+- `schema.kiwi.bin` is the decompressed binary Kiwi schema used to decode
+  `canvas.fig`. It can be converted to readable schema text or JSON with the
+  `kiwi-schema` package. Nodes retain IDs,
   names, type, parent/child ordering, absolute bounds, transforms, visibility,
   opacity, masks and frame clipping flags, constraints, layout details, paints, effects, text, Figma-computed
   text layout metrics (baselines and font metadata), and asset/vector

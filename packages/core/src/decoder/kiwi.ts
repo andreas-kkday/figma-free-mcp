@@ -10,7 +10,8 @@ const kiwiSignature = new TextEncoder().encode('fig-kiwi');
 export function decodeKiwiCanvas(canvas: Uint8Array): DecodedFig {
   try {
     const { version, chunks } = readChunks(canvas);
-    const schema = decodeBinarySchema(decompressChunk(chunks[0]!));
+    const schemaBytes = decompressChunk(chunks[0]!);
+    const schema = decodeBinarySchema(schemaBytes);
     const root = findRootDefinition(schema);
     const decoded: unknown = new KiwiInterpreter(schema).decode(root, decompressChunk(chunks[1]!));
     if (!isRecord(decoded)) {
@@ -25,6 +26,7 @@ export function decodeKiwiCanvas(canvas: Uint8Array): DecodedFig {
     return {
       decoderVersion: 'kiwi-schema@0.5.0',
       canvasVersion: version,
+      schemaBytes,
       document: decoded,
       nodeChanges,
       blobs: Array.isArray(decoded.blobs) ? decoded.blobs : []

@@ -10,7 +10,7 @@ import type { ExtractedTokens, ExtractedVariables } from '../tokens/extract.js';
 export interface BundleImage { hash: string; bytes: Uint8Array; format: AssetFormat; }
 export interface BundleVector { blobId: number; bytes: Uint8Array; }
 export interface BundleSvgVector { blobId: number; svg: string; }
-export interface BundleInput { outDir: string; manifest: Record<string, unknown>; raw: unknown; agent: AgentDocument; images: readonly BundleImage[]; vectors: readonly BundleVector[]; svgVectors?: readonly BundleSvgVector[]; thumbnail?: Uint8Array; tokens: ExtractedTokens; variables?: ExtractedVariables; }
+export interface BundleInput { outDir: string; manifest: Record<string, unknown>; raw: unknown; agent: AgentDocument; schemaBytes?: Uint8Array; images: readonly BundleImage[]; vectors: readonly BundleVector[]; svgVectors?: readonly BundleSvgVector[]; thumbnail?: Uint8Array; tokens: ExtractedTokens; variables?: ExtractedVariables; }
 
 export async function writeBundle(input: BundleInput): Promise<void> {
   if (await exists(input.outDir)) throw new FigctxError('OUTPUT_EXISTS', `Output directory exists: ${input.outDir}`);
@@ -22,6 +22,7 @@ export async function writeBundle(input: BundleInput): Promise<void> {
     await writeJson(join(temporary, 'manifest.json'), input.manifest);
     await writeJson(join(temporary, 'document.raw.json'), input.raw);
     await writeJson(join(temporary, 'document.agent.json'), input.agent);
+    if (input.schemaBytes) await writeFile(join(temporary, 'schema.kiwi.bin'), input.schemaBytes);
     await writeJson(join(temporary, 'tokens/colors.json'), { contractVersion: '1', tokens: input.tokens.colors });
     await writeJson(join(temporary, 'tokens/typography.json'), { contractVersion: '1', tokens: input.tokens.typography });
     await writeJson(join(temporary, 'tokens/effects.json'), { contractVersion: '1', tokens: input.tokens.effects });

@@ -44,6 +44,7 @@ export async function extractFig(sourcePath: string, outDir: string): Promise<Ex
     manifest: { contractVersion: '1', parserVersion: decoded.decoderVersion, status: 'success', sourceFilename: basename(sourcePath), sourceSha256: archive.sourceSha256, ...(originFileKey ? { originFileKey } : {}), canvasVariant: archive.canvasVariant, nodeCount: decoded.nodeChanges.length, visualBaseline: archive.thumbnail ? 'assets/thumbnail.png' : undefined, ...(warnings.length ? { warnings } : {}) },
     raw: { decoderVersion: decoded.decoderVersion, canvasVersion: decoded.canvasVersion, document: decoded.document },
     agent,
+    schemaBytes: decoded.schemaBytes,
     images: archive.images, vectors, svgVectors, thumbnail: archive.thumbnail, tokens: extractTokens(agent), variables
   });
   return { agent, outDir };
