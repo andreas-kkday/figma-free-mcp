@@ -20,6 +20,15 @@ describe('normalized document', () => {
     expect(document.nodesById['1:3']).toMatchObject({ text: 'Hello', parentId: '1:2' });
   });
 
+  test('applies component property assignments to referenced text nodes', () => {
+    const normalized = normalizeDocument([
+      { guid: { sessionID: 9, localID: 1 }, type: 'INSTANCE', symbolData: { symbolID: { sessionID: 8, localID: 10 }, symbolOverrides: [{ guidPath: { guids: [{ sessionID: 8, localID: 11 }] }, componentPropAssignments: [{ defID: { sessionID: 7, localID: 1 }, varValue: { value: { textDataValue: { characters: 'Resolved title' } } } }] }] } },
+      { guid: { sessionID: 8, localID: 10 }, type: 'SYMBOL' },
+      { guid: { sessionID: 8, localID: 11 }, type: 'TEXT', parentIndex: 1, componentPropRefs: [{ defID: { sessionID: 7, localID: 1 }, componentPropNodeField: 'TEXT_DATA' }], textData: { characters: 'Default title' } }
+    ]);
+    expect(normalized.nodesById['9:1/component/8:11']!.text).toBe('Resolved title');
+  });
+
   test('materializes children from an externally referenced symbol', () => {
     const normalized = normalizeDocument([
       { guid: { sessionID: 9, localID: 1 }, type: 'INSTANCE', symbolData: { symbolID: { sessionID: 8, localID: 10 }, symbolOverrides: [{ guidPath: { guids: [{ sessionID: 8, localID: 11 }] }, textData: { characters: 'Instance text' } }] } },
@@ -33,6 +42,18 @@ describe('normalized document', () => {
 
   test.each(['1:3', '1-3', 'https://www.figma.com/design/file/name?node-id=1-3'])
   ('resolves %s', (reference) => expect(resolveNodeReference(document, reference).id).toBe('1:3'));
+
+  test('replaces a component slot with instance-owned content', () => {
+    const normalized = normalizeDocument([
+      { guid: { sessionID: 9, localID: 1 }, type: 'INSTANCE', componentPropAssignments: [{ defID: { sessionID: 7, localID: 2 }, varValue: { value: { slotContentIdValue: { guid: { sessionID: 9, localID: 3 } } } } }], symbolData: { symbolID: { sessionID: 8, localID: 10 } } },
+      { guid: { sessionID: 8, localID: 10 }, type: 'SYMBOL' },
+      { guid: { sessionID: 8, localID: 11 }, type: 'FRAME', parentIndex: 1, parameterConsumptionMap: { entries: [{ variableData: { value: { propRefValue: { defId: { sessionID: 7, localID: 2 } } }, resolvedDataType: 'SLOT_CONTENT_ID' }, variableField: 'SLOT_CONTENT_ID' }] } },
+      { guid: { sessionID: 9, localID: 3 }, type: 'FRAME' },
+      { guid: { sessionID: 9, localID: 4 }, type: 'TEXT', parentIndex: 3, textData: { characters: 'Slot content' } }
+    ]);
+    const slot = normalized.nodesById['9:1/component/8:11']!;
+    expect(slot.childIds).toEqual(['9:4']);
+  });
 
   test('rejects a Figma URL for another file key', () => {
     const keyed = normalizeDocument([], { originFileKey: 'local-file' });

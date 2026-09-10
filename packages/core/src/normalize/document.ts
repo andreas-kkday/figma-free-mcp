@@ -33,6 +33,8 @@ export interface AgentNode {
   frameMaskDisabled?: boolean;
   assetRefs: AssetReference[];
   vectorRef?: VectorReference;
+  /** Component properties consumed by this node (used to resolve instance overrides and slots). */
+  componentPropRefs?: Array<{ defId: string; field: string }>;
 }
 
 export interface TextSegment { start: number; end: number; text: string; styleId: number; typography: Record<string, unknown>; fills?: unknown; }
@@ -99,12 +101,20 @@ function materializeExternalInstances(nodesById: Record<string, AgentNode>, chan
     childrenFor(source.id).forEach(collect);
 
     const overrides = new Map<string, Record<string, unknown>>();
+    const propertyAssignments = new Map<string, Record<string, unknown>>();
+    const collectAssignments = (change: Record<string, unknown> | undefined) => {
+      for (const assignment of componentPropAssignments(change)) propertyAssignments.set(assignment.defId, assignment.value);
+      for (const [nodeId, override] of symbolOverrides(change)) {
+        overrides.set(nodeId, override);
+        for (const assignment of componentPropAssignments(override)) propertyAssignments.set(assignment.defId, assignment.value);
+      }
+    };
     for (const id of sourceIds) {
       const nested = nodesById[id];
-      if (nested?.type !== 'INSTANCE') continue;
-      for (const [nodeId, override] of symbolOverrides(changes[nested.zIndex])) overrides.set(nodeId, override);
+      if (nested?.type === 'INSTANCE') collectAssignments(changes[nested.zIndex]);
     }
-    for (const [nodeId, override] of symbolOverrides(changes[instance.zIndex])) overrides.set(nodeId, override);
+    // The outer instance wins over defaults and nested-instance assignments.
+    collectAssignments(changes[instance.zIndex]);
     const clonedIds = new Map<string, string>();
     for (const id of sourceIds) {
       const sourceNode = nodesById[id]!;
@@ -121,10 +131,21 @@ function materializeExternalInstances(nodesById: Record<string, AgentNode>, chan
       if (clone.type === 'INSTANCE') clone.resolvedChildIds = [...clone.childIds];
       else delete clone.resolvedChildIds;
       applySymbolOverride(clone, overrides.get(original.node_id));
+      applyComponentProperty(clone, propertyAssignments);
       nodesById[clone.id] = clone;
     }
     instance.resolvedChildIds = childrenFor(source.id).flatMap((id) => clonedIds.get(id) ? [clonedIds.get(id)!] : []);
     instance.childIds = [...instance.resolvedChildIds];
+    // A slot assignment supplies an instance-owned subtree in place of the
+    // component's placeholder children. Keep the supplied nodes addressable;
+    // traversal is based on childIds and therefore remains complete for MCP.
+    for (const id of sourceIds) {
+      const clone = nodesById[clonedIds.get(id)!];
+      if (!clone || !clone.componentPropRefs?.some((ref) => ref.field === 'SLOT_CONTENT_ID')) continue;
+      const slot = componentPropAssignments(changes[instance.zIndex]).find((assignment) => clone.componentPropRefs?.some((ref) => ref.defId === assignment.defId));
+      const contentId = slot ? slotContentId(slot.value) : undefined;
+      if (contentId) clone.childIds = effectiveChildrenFor(nodesById, contentId);
+    }
   }
 }
 
@@ -162,6 +183,52 @@ function extractUrlNodeId(reference: string): string {
 function fileKeyFromReference(reference: string): string | undefined {
   if (!reference.includes('://')) return undefined;
   try { const match = new URL(reference).pathname.match(/\/(?:design|file)\/([^/?#]+)/i); return match?.[1] ? decodeURIComponent(match[1]) : undefined; } catch { return undefined; }
+}
+
+function componentPropAssignments(change: Record<string, unknown> | undefined): Array<{ defId: string; value: Record<string, unknown> }> {
+  const entries = Array.isArray(change?.componentPropAssignments) ? change.componentPropAssignments : [];
+  return entries.flatMap((entry) => {
+    const value = record(entry)?.varValue;
+    const defId = guidId(record(record(entry)?.defID));
+    return defId && value ? [{ defId, value: value as Record<string, unknown> }] : [];
+  });
+}
+
+function componentPropRefs(change: Record<string, unknown>): Array<{ defId: string; field: string }> | undefined {
+  const entries = Array.isArray(change.componentPropRefs) ? change.componentPropRefs : [];
+  const refs = entries.flatMap((entry) => {
+    const ref = record(entry); const defId = guidId(ref?.defID); const field = ref?.componentPropNodeField;
+    return defId && typeof field === 'string' ? [{ defId, field }] : [];
+  });
+  const parameterEntries = record(change.parameterConsumptionMap)?.entries;
+  if (Array.isArray(parameterEntries)) for (const entry of parameterEntries) {
+    const variableData = record(record(entry)?.variableData);
+    const propRef = record(record(variableData?.value)?.propRefValue);
+    const defId = guidId(record(propRef?.defId));
+    const field = variableData?.resolvedDataType;
+    if (defId && typeof field === 'string') refs.push({ defId, field });
+  }
+  return refs.length ? refs : undefined;
+}
+
+function slotContentId(value: Record<string, unknown>): string | undefined {
+  const guid = record(record(record(value.value)?.slotContentIdValue)?.guid);
+  return guidId(guid);
+}
+
+function effectiveChildrenFor(nodesById: Record<string, AgentNode>, id: string): string[] {
+  const node = nodesById[id];
+  return node ? effectiveChildIds(node) : [];
+}
+
+function applyComponentProperty(node: AgentNode, assignments: Map<string, Record<string, unknown>>): void {
+  for (const ref of node.componentPropRefs ?? []) {
+    const assignment = assignments.get(ref.defId);
+    if (!assignment) continue;
+    const textData = record(record(assignment.value)?.textDataValue) ?? record(record(assignment.value)?.textValue);
+    if (ref.field === 'TEXT_DATA' && typeof textData?.characters === 'string') node.text = textData.characters;
+    if (ref.field === 'VISIBLE' && typeof record(assignment.value)?.boolValue === 'boolean') node.visible = record(assignment.value)!.boolValue as boolean;
+  }
 }
 
 function symbolOverrides(change: Record<string, unknown> | undefined): Map<string, Record<string, unknown>> {
@@ -205,7 +272,7 @@ function normalizeNode(change: Record<string, unknown>, zIndex: number, assetPat
     ...(typeof textData?.characters === 'string' ? { text: textData.characters } : {}), ...(segments ? { textSegments: segments } : {}), ...(textLayout && Object.keys(textLayout).length ? { textLayout } : {}),
     ...(change.size === undefined ? {} : { bounds: change.size }), ...(change.transform === undefined ? {} : { transform: change.transform }),
     ...(typeof change.visible === 'boolean' ? { visible: change.visible } : {}), ...(typeof change.opacity === 'number' ? { opacity: change.opacity } : {}), ...(change.blendMode === undefined ? {} : { blendMode: change.blendMode }), ...(typeof change.mask === 'boolean' ? { mask: change.mask } : {}), ...(typeof change.frameMaskDisabled === 'boolean' ? { frameMaskDisabled: change.frameMaskDisabled } : {}), constraints: { horizontal: change.horizontalConstraint, vertical: change.verticalConstraint },
-    layout: pick(change, layoutKeys), fills: change.fillPaints, strokes: change.strokePaints, effects: change.effects, typography, ...(styles ? { styleRefs: styles } : {}), ...(bindings ? { variableBindings: bindings } : {}), assetRefs: assetReferences(change.fillPaints, assetPaths), ...(vectorReference(change.vectorData, vectorPaths, vectorSvgPaths) ? { vectorRef: vectorReference(change.vectorData, vectorPaths, vectorSvgPaths) } : {})
+    layout: pick(change, layoutKeys), fills: change.fillPaints, strokes: change.strokePaints, effects: change.effects, typography, ...(styles ? { styleRefs: styles } : {}), ...(bindings ? { variableBindings: bindings } : {}), assetRefs: assetReferences(change.fillPaints, assetPaths), ...(vectorReference(change.vectorData, vectorPaths, vectorSvgPaths) ? { vectorRef: vectorReference(change.vectorData, vectorPaths, vectorSvgPaths) } : {}), ...(componentPropRefs(change) ? { componentPropRefs: componentPropRefs(change) } : {})
   };
 }
 
