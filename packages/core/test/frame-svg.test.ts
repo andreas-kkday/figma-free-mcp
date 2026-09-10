@@ -74,6 +74,19 @@ test('finds a maximal vector group and composes every descendant path once', () 
   expect(svg).toContain('fill-rule="evenodd"');
 });
 
+test('includes stroke-only vectors in groups and preserves stroke styling', () => {
+  const document = {
+    contractVersion: '1' as const,
+    rootIds: ['3:1'],
+    nodesById: {
+      '3:1': { id: '3:1', name: 'Icon', type: 'FRAME', childIds: ['3:2'], zIndex: 0, bounds: { x: 24, y: 24 }, assetRefs: [] },
+      '3:2': { id: '3:2', name: 'Heart', type: 'VECTOR', parentId: '3:1', childIds: [], zIndex: 1, bounds: { x: 19.2, y: 16.8 }, strokes: [{ type: 'SOLID', color: { r: 0.2, g: 0.3, b: 0.4 }, visible: true }], strokeWeight: 1.6, strokeCap: 'ROUND', strokeJoin: 'ROUND', assetRefs: [], vectorRef: { blobId: 216, path: 'vector.bin.gz', format: 'kiwi-vector-network' as const, compression: 'gzip' } }
+    }
+  };
+  expect(frameSvg.findVectorGroups(document, '3:1')).toEqual([{ nodeId: '3:1', name: 'Icon', bounds: { x: 24, y: 24 }, vectorCount: 1 }]);
+  expect(frameSvg.composeVectorGroupSvg(document, '3:1', new Map([[216, '<svg><path d="M 0 0 L 10 10" fill="currentColor"/></svg>']]))).toContain('fill="none" stroke="#334d66" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"');
+});
+
 test('loads a selected vector group from its bundle SVG files', async () => {
   expect(frameSvg).toHaveProperty('composeBundleVectorGroupSvg');
   const bundle = await mkdtemp(join(tmpdir(), 'figctx-vector-group-'));

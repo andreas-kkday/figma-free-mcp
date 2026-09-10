@@ -136,7 +136,7 @@ function defineMask(document: AgentDocument, node: AgentNode, parentMatrix: Matr
 function maskPaths(document: AgentDocument, node: AgentNode, parentMatrix: Matrix, vectorSvgs: ReadonlyMap<number, string>): string[] {
   if (node.visible === false) return [];
   const matrix = multiply(parentMatrix, matrixOf(node));
-  const paths = vectorPath(node, matrix, vectorSvgs, '#ffffff');
+  const paths = vectorPath(node, matrix, vectorSvgs, '#ffffff', false);
   const result = paths ? [paths] : [];
   for (const childId of node.childIds) {
     const child = document.nodesById[childId];
@@ -145,9 +145,13 @@ function maskPaths(document: AgentDocument, node: AgentNode, parentMatrix: Matri
   return result;
 }
 
-function vectorPath(node: AgentNode, matrix: Matrix, vectorSvgs: ReadonlyMap<number, string>, fill: string): string {
+function vectorPath(node: AgentNode, matrix: Matrix, vectorSvgs: ReadonlyMap<number, string>, fill: string, allowStroke = true): string {
   const svg = node.vectorRef ? vectorSvgs.get(node.vectorRef.blobId) : undefined;
-  return svg ? pathElements(svg, matrix, fill) : '';
+  if (!svg) return '';
+  const normalized = node.vectorRef?.normalizedSize;
+  const bounds = sizeOf(node);
+  const scale = normalized && bounds ? [bounds.x / normalized.x, 0, 0, bounds.y / normalized.y, 0, 0] as Matrix : identity;
+  return pathElements(svg, multiply(matrix, scale), fill, node, allowStroke);
 }
 
 function withOpacity(content: string, opacity: number | undefined): string {
@@ -155,11 +159,18 @@ function withOpacity(content: string, opacity: number | undefined): string {
 }
 
 function clipsContents(node: AgentNode): boolean { return node.frameMaskDisabled === false && node.type === 'FRAME'; }
-function pathElements(svg: string, matrix: Matrix, fill: string): string {
+function pathElements(svg: string, matrix: Matrix, fill: string, node: AgentNode, allowStroke: boolean): string {
   const transform = ` transform="matrix(${matrix.map(number).join(' ')})"`;
+  const stroke = allowStroke ? strokeOf(node) : undefined;
   return (svg.match(/<path\b[^>]*>/g) ?? []).map((path) => {
-    const colored = path.includes('fill="currentColor"') ? path.replace('fill="currentColor"', `fill="${fill}"`) : path.includes(' fill=') ? path : path.replace(/\/?>(?=$)/, ` fill="${fill}"$&`);
-    return colored.replace(/\/?>(?=$)/, `${transform}/>`);
+    let styled = path;
+    if (stroke) {
+      styled = styled.replace(/\sfill="[^"]*"/g, '').replace(/\sfill-rule="[^"]*"/g, '');
+      styled = styled.replace(/\/>$/, ` fill="none" stroke="${stroke.color}" stroke-width="${number(stroke.weight)}" stroke-linecap="${stroke.cap}" stroke-linejoin="${stroke.join}"/>`);
+    } else {
+      styled = styled.includes('fill="currentColor"') ? styled.replace('fill="currentColor"', `fill="${fill}"`) : styled.includes(' fill=') ? styled : styled.replace(/\/?>(?=$)/, ` fill="${fill}"$&`);
+    }
+    return styled.replace(/\/?>(?=$)/, `${transform}/>`);
   }).join('');
 }
 function sizeOf(node: AgentNode | undefined): { x: number; y: number } | undefined {
@@ -173,7 +184,7 @@ function matrixOf(node: AgentNode): Matrix {
   const value = node.transform as Record<string, unknown> | undefined;
   return value && [value.m00, value.m10, value.m01, value.m11, value.m02, value.m12].every((entry) => typeof entry === 'number') ? [value.m00 as number, value.m10 as number, value.m01 as number, value.m11 as number, value.m02 as number, value.m12 as number] : identity;
 }
-function multiply([a, b, c, d, e, f]: Matrix, [g, h, i, j, k, l]: Matrix): Matrix { return [a * g + c * h, b * g + d * h, a * i + c * j, b * g + d * j, a * k + c * l + e, b * k + d * l + f]; }
+function multiply([a, b, c, d, e, f]: Matrix, [g, h, i, j, k, l]: Matrix): Matrix { return [a * g + c * h, b * g + d * h, a * i + c * j, b * i + d * j, a * k + c * l + e, b * k + d * l + f]; }
 function fillOf(node: AgentNode): string {
   const paints = Array.isArray(node.fills) ? node.fills : [];
   const paint = paints.find((entry) => entry && typeof entry === 'object' && (entry as Record<string, unknown>).type === 'SOLID' && (entry as Record<string, unknown>).visible !== false) as Record<string, unknown> | undefined;
@@ -183,8 +194,21 @@ function fillOf(node: AgentNode): string {
 }
 function supportedStyle(node: AgentNode): boolean {
   const effects = Array.isArray(node.effects) ? node.effects : [];
-  const strokes = Array.isArray(node.strokes) ? node.strokes : [];
-  return !effects.length && !strokes.length && (node.blendMode === undefined || node.blendMode === 'NORMAL' || node.blendMode === 'PASS_THROUGH');
+  return !effects.length && (node.blendMode === undefined || node.blendMode === 'NORMAL' || node.blendMode === 'PASS_THROUGH');
+}
+function strokeOf(node: AgentNode): { color: string; weight: number; cap: string; join: string } | undefined {
+  const fills = Array.isArray(node.fills) ? node.fills : [];
+  if (fills.some((entry) => entry && typeof entry === 'object' && (entry as Record<string, unknown>).type === 'SOLID' && (entry as Record<string, unknown>).visible !== false)) return undefined;
+  const paints = Array.isArray(node.strokes) ? node.strokes : [];
+  const paint = paints.find((entry) => entry && typeof entry === 'object' && (entry as Record<string, unknown>).type === 'SOLID' && (entry as Record<string, unknown>).visible !== false) as Record<string, unknown> | undefined;
+  const color = paint?.color as Record<string, unknown> | undefined;
+  if (!color || !['r', 'g', 'b'].every((key) => typeof color[key] === 'number')) return undefined;
+  return {
+    color: `#${[color.r, color.g, color.b].map((value) => Math.round((value as number) * 255).toString(16).padStart(2, '0')).join('')}`,
+    weight: node.strokeWeight ?? 1,
+    cap: node.strokeCap === 'ROUND' ? 'round' : node.strokeCap === 'SQUARE' ? 'square' : 'butt',
+    join: node.strokeJoin === 'ROUND' ? 'round' : node.strokeJoin === 'BEVEL' ? 'bevel' : 'miter'
+  };
 }
 interface VectorStatus { vectorOnly: boolean; vectorCount: number; }
 const identity: Matrix = [1, 0, 0, 1, 0, 0];

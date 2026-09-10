@@ -53,7 +53,9 @@ export async function extractFig(sourcePath: string, outDir: string): Promise<Ex
 
 function vectorSvg(node: Record<string, unknown> | undefined, bytes: Uint8Array): string | undefined {
   const size = record(node?.size);
-  return typeof size?.x === 'number' && typeof size.y === 'number' ? vectorNetworkToSvg(bytes, { x: size.x, y: size.y }) : undefined;
+  const normalized = record(record(node?.vectorData)?.normalizedSize);
+  const viewBox = normalized && typeof normalized.x === 'number' && typeof normalized.y === 'number' && normalized.x > 0 && normalized.y > 0 ? normalized : size;
+  return typeof viewBox?.x === 'number' && typeof viewBox.y === 'number' ? vectorNetworkToSvg(bytes, { x: viewBox.x, y: viewBox.y }) : undefined;
 }
 
 function vectorResourceNames(changes: readonly Record<string, unknown>[]): Record<number, string> {

@@ -21,6 +21,9 @@ export interface AgentNode {
   layout?: Record<string, unknown>;
   fills?: unknown;
   strokes?: unknown;
+  strokeWeight?: number;
+  strokeCap?: string;
+  strokeJoin?: string;
   effects?: unknown;
   typography?: Record<string, unknown>;
   styleRefs?: StyleReferences;
@@ -41,7 +44,7 @@ export interface TextSegment { start: number; end: number; text: string; styleId
 export interface StyleReferences { text?: string; effects?: string; strokeFill?: string; }
 export interface VariableBinding { field: string; variableId: string; resolvedType?: string; }
 export interface AssetReference { hash: string; path: string; kind: 'image-fill'; }
-export interface VectorReference { blobId: number; path: string; format: 'kiwi-vector-network'; compression: 'gzip'; svgPath?: string; name?: string; }
+export interface VectorReference { blobId: number; path: string; format: 'kiwi-vector-network'; compression: 'gzip'; normalizedSize?: { x: number; y: number }; svgPath?: string; name?: string; }
 
 export interface AgentDocument {
   contractVersion: '1';
@@ -299,7 +302,11 @@ function normalizeNode(change: Record<string, unknown>, zIndex: number, assetPat
     ...(typeof textData?.characters === 'string' ? { text: textData.characters } : {}), ...(segments ? { textSegments: segments } : {}), ...(textLayout && Object.keys(textLayout).length ? { textLayout } : {}),
     ...(change.size === undefined ? {} : { bounds: change.size }), ...(change.transform === undefined ? {} : { transform: change.transform }),
     ...(typeof change.visible === 'boolean' ? { visible: change.visible } : {}), ...(typeof change.opacity === 'number' ? { opacity: change.opacity } : {}), ...(change.blendMode === undefined ? {} : { blendMode: change.blendMode }), ...(typeof change.mask === 'boolean' ? { mask: change.mask } : {}), ...(typeof change.frameMaskDisabled === 'boolean' ? { frameMaskDisabled: change.frameMaskDisabled } : {}), constraints: { horizontal: change.horizontalConstraint, vertical: change.verticalConstraint },
-    layout: pick(change, layoutKeys), fills: change.fillPaints, strokes: change.strokePaints, effects: change.effects, typography, ...(styles ? { styleRefs: styles } : {}), ...(bindings ? { variableBindings: bindings } : {}), assetRefs: assetReferences(change.fillPaints, assetPaths), ...(vectorReference(change.vectorData, vectorPaths, vectorSvgPaths, vectorNames) ? { vectorRef: vectorReference(change.vectorData, vectorPaths, vectorSvgPaths, vectorNames) } : {}), ...(componentPropRefs(change) ? { componentPropRefs: componentPropRefs(change) } : {})
+    layout: pick(change, layoutKeys), fills: change.fillPaints, strokes: change.strokePaints,
+    ...(typeof change.strokeWeight === 'number' ? { strokeWeight: change.strokeWeight } : {}),
+    ...(typeof change.strokeCap === 'string' ? { strokeCap: change.strokeCap } : {}),
+    ...(typeof change.strokeJoin === 'string' ? { strokeJoin: change.strokeJoin } : {}),
+    effects: change.effects, typography, ...(styles ? { styleRefs: styles } : {}), ...(bindings ? { variableBindings: bindings } : {}), assetRefs: assetReferences(change.fillPaints, assetPaths), ...(vectorReference(change.vectorData, vectorPaths, vectorSvgPaths, vectorNames) ? { vectorRef: vectorReference(change.vectorData, vectorPaths, vectorSvgPaths, vectorNames) } : {}), ...(componentPropRefs(change) ? { componentPropRefs: componentPropRefs(change) } : {})
   };
 }
 
@@ -347,10 +354,13 @@ function variableBindings(change: Record<string, unknown>): VariableBinding[] | 
   return bindings.length ? bindings : undefined;
 }
 function vectorReference(value: unknown, vectorPaths: Readonly<Record<number, string>> | undefined, vectorSvgPaths: Readonly<Record<number, string>> | undefined, vectorNames: Readonly<Record<number, string>> | undefined): VectorReference | undefined {
-  const blobId = record(value)?.vectorNetworkBlob;
+  const data = record(value);
+  const blobId = data?.vectorNetworkBlob;
   if (typeof blobId !== 'number') return undefined;
   const path = vectorPaths?.[blobId];
-  return path ? { blobId, path, format: 'kiwi-vector-network', compression: 'gzip', ...(vectorSvgPaths?.[blobId] ? { svgPath: vectorSvgPaths[blobId] } : {}), ...(vectorNames?.[blobId] ? { name: vectorNames[blobId] } : {}) } : undefined;
+  const normalizedSize = record(data?.normalizedSize);
+  const size = normalizedSize && typeof normalizedSize.x === 'number' && typeof normalizedSize.y === 'number' && normalizedSize.x > 0 && normalizedSize.y > 0 ? { x: normalizedSize.x, y: normalizedSize.y } : undefined;
+  return path ? { blobId, path, format: 'kiwi-vector-network', compression: 'gzip', ...(size ? { normalizedSize: size } : {}), ...(vectorSvgPaths?.[blobId] ? { svgPath: vectorSvgPaths[blobId] } : {}), ...(vectorNames?.[blobId] ? { name: vectorNames[blobId] } : {}) } : undefined;
 }
 function assetReferences(value: unknown, assetPaths: Readonly<Record<string, string>> | undefined): AssetReference[] {
   if (!Array.isArray(value) || !assetPaths) return [];
