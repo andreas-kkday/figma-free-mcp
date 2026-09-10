@@ -143,6 +143,7 @@ function materializeExternalInstances(nodesById: Record<string, AgentNode>, chan
       applyComponentProperty(clone, propertyAssignments);
       nodesById[clone.id] = clone;
     }
+    materializeOverriddenComponentSymbols(clonedIds, sourceIds, nodesById, rawChildIds, propertyAssignments);
     instance.resolvedChildIds = childrenFor(source.id).flatMap((id) => clonedIds.get(id) ? [clonedIds.get(id)!] : []);
     instance.childIds = [...instance.resolvedChildIds];
     // A slot assignment supplies an instance-owned subtree in place of the
@@ -262,6 +263,45 @@ function applyComponentProperty(node: AgentNode, assignments: Map<string, Record
     const textData = record(record(assignment.value)?.textDataValue) ?? record(record(assignment.value)?.textValue);
     if (ref.field === 'TEXT_DATA' && typeof textData?.characters === 'string') node.text = textData.characters;
     if (ref.field === 'VISIBLE' && typeof record(assignment.value)?.boolValue === 'boolean') node.visible = record(assignment.value)!.boolValue as boolean;
+  }
+}
+
+function materializeOverriddenComponentSymbols(clonedIds: ReadonlyMap<string, string>, sourceIds: ReadonlySet<string>, nodesById: Record<string, AgentNode>, rawChildIds: ReadonlyMap<string, readonly string[]>, assignments: Map<string, Record<string, unknown>>): void {
+  for (const originalId of sourceIds) {
+    const original = nodesById[originalId];
+    const cloneId = clonedIds.get(originalId);
+    const clone = cloneId ? nodesById[cloneId] : undefined;
+    if (!original || !clone || clone.type !== 'INSTANCE') continue;
+    const ref = clone.componentPropRefs?.find((item) => item.field === 'OVERRIDDEN_SYMBOL_ID');
+    const overriddenSymbolId = ref ? guidId(record(record(assignments.get(ref.defId)?.value)?.symbolIdValue)?.guid) : undefined;
+    const overriddenSymbol = overriddenSymbolId ? nodesById[overriddenSymbolId] : undefined;
+    if (!overriddenSymbol || overriddenSymbol.type !== 'SYMBOL') continue;
+
+    const descendants: string[] = [];
+    const collect = (id: string) => {
+      if (descendants.includes(id)) return;
+      if (!nodesById[id]) return;
+      descendants.push(id);
+      for (const childId of rawChildIds.get(id) ?? []) collect(childId);
+    };
+    for (const childId of rawChildIds.get(overriddenSymbol.id) ?? []) collect(childId);
+    const overrideIds = new Map(descendants.map((id) => [id, `${clone.id}/component/${nodesById[id]!.node_id}`] as const));
+    for (const id of descendants) {
+      const sourceNode = nodesById[id]!;
+      const replacement = structuredClone(sourceNode);
+      replacement.id = overrideIds.get(id)!;
+      replacement.node_id = sourceNode.node_id;
+      replacement.main_component_id = overriddenSymbolId;
+      replacement.parentId = sourceNode.parentId === overriddenSymbol.id ? clone.id : overrideIds.get(sourceNode.parentId ?? '');
+      replacement.childIds = (rawChildIds.get(id) ?? []).flatMap((childId) => overrideIds.get(childId) ? [overrideIds.get(childId)!] : []);
+      if (replacement.type === 'INSTANCE') replacement.resolvedChildIds = [...replacement.childIds];
+      else delete replacement.resolvedChildIds;
+      applyComponentProperty(replacement, assignments);
+      nodesById[replacement.id] = replacement;
+    }
+    clone.main_component_id = overriddenSymbolId;
+    clone.childIds = (rawChildIds.get(overriddenSymbol.id) ?? []).flatMap((childId) => overrideIds.get(childId) ? [overrideIds.get(childId)!] : []);
+    clone.resolvedChildIds = [...clone.childIds];
   }
 }
 

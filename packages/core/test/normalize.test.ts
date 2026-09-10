@@ -41,6 +41,20 @@ describe('normalized document', () => {
     expect(normalized.nodesById['9:1/component/8:11']).toMatchObject({ main_component_id: '7:20' });
   });
 
+  test('applies OVERRIDDEN_SYMBOL_ID assignments to nested instances', () => {
+    const normalized = normalizeDocument([
+      { guid: { sessionID: 9, localID: 1 }, type: 'INSTANCE', componentPropAssignments: [{ defID: { sessionID: 7, localID: 1 }, varValue: { value: { symbolIdValue: { guid: { sessionID: 7, localID: 20 } } } } }], symbolData: { symbolID: { sessionID: 8, localID: 10 } } },
+      { guid: { sessionID: 8, localID: 10 }, type: 'SYMBOL' },
+      { guid: { sessionID: 8, localID: 11 }, type: 'INSTANCE', parentIndex: 1, componentPropRefs: [{ defID: { sessionID: 7, localID: 1 }, componentPropNodeField: 'OVERRIDDEN_SYMBOL_ID' }], symbolData: { symbolID: { sessionID: 6, localID: 30 } } },
+      { guid: { sessionID: 6, localID: 30 }, type: 'SYMBOL' },
+      { guid: { sessionID: 7, localID: 20 }, type: 'SYMBOL' },
+      { guid: { sessionID: 7, localID: 21 }, type: 'VECTOR', parentIndex: 4 }
+    ]);
+    const instance = normalized.nodesById['9:1/component/8:11']!;
+    expect(instance.main_component_id).toBe('7:20');
+    expect(instance.childIds).toEqual(['9:1/component/8:11/component/7:21']);
+  });
+
   test('applies component property assignments to referenced text nodes', () => {
     const normalized = normalizeDocument([
       { guid: { sessionID: 9, localID: 1 }, type: 'INSTANCE', symbolData: { symbolID: { sessionID: 8, localID: 10 }, symbolOverrides: [{ guidPath: { guids: [{ sessionID: 8, localID: 11 }] }, componentPropAssignments: [{ defID: { sessionID: 7, localID: 1 }, varValue: { value: { textDataValue: { characters: 'Resolved title' } } } }] }] } },
