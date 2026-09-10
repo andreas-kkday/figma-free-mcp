@@ -20,6 +20,17 @@ describe('normalized document', () => {
     expect(document.nodesById['1:3']).toMatchObject({ text: 'Hello', parentId: '1:2' });
   });
 
+  test('materializes externally overridden symbols and preserves vector references', () => {
+    const normalized = normalizeDocument([
+      { guid: { sessionID: 9, localID: 1 }, type: 'INSTANCE', symbolData: { symbolID: { sessionID: 8, localID: 10 }, symbolOverrides: [{ overriddenSymbolID: { sessionID: 7, localID: 20 } }] } },
+      { guid: { sessionID: 8, localID: 10 }, type: 'SYMBOL' },
+      { guid: { sessionID: 7, localID: 20 }, type: 'SYMBOL', name: 'Chevron' },
+      { guid: { sessionID: 7, localID: 21 }, type: 'VECTOR', parentIndex: 2, vectorData: { vectorNetworkBlob: 224 } }
+    ], { vectorPaths: { 224: 'assets/vectors/vector-network-224.bin.gz' } });
+    expect(normalized.nodesById['9:1'].childIds).toContain('9:1/override/7:20');
+    expect(normalized.nodesById['9:1/override/7:21']!.vectorRef).toMatchObject({ blobId: 224, path: 'assets/vectors/vector-network-224.bin.gz' });
+  });
+
   test('applies component property assignments to referenced text nodes', () => {
     const normalized = normalizeDocument([
       { guid: { sessionID: 9, localID: 1 }, type: 'INSTANCE', symbolData: { symbolID: { sessionID: 8, localID: 10 }, symbolOverrides: [{ guidPath: { guids: [{ sessionID: 8, localID: 11 }] }, componentPropAssignments: [{ defID: { sessionID: 7, localID: 1 }, varValue: { value: { textDataValue: { characters: 'Resolved title' } } } }] }] } },

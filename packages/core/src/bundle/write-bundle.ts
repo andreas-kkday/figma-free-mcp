@@ -8,7 +8,7 @@ import type { AgentDocument } from '../normalize/document.js';
 import type { ExtractedTokens, ExtractedVariables } from '../tokens/extract.js';
 
 export interface BundleImage { hash: string; bytes: Uint8Array; format: AssetFormat; }
-export interface BundleVector { blobId: number; bytes: Uint8Array; }
+export interface BundleVector { blobId: number; bytes: Uint8Array; name?: string; }
 export interface BundleSvgVector { blobId: number; svg: string; }
 export interface BundleInput { outDir: string; manifest: Record<string, unknown>; raw: unknown; agent: AgentDocument; schemaBytes?: Uint8Array; images: readonly BundleImage[]; vectors: readonly BundleVector[]; svgVectors?: readonly BundleSvgVector[]; thumbnail?: Uint8Array; tokens: ExtractedTokens; variables?: ExtractedVariables; }
 
@@ -37,14 +37,14 @@ export async function writeBundle(input: BundleInput): Promise<void> {
     }
     await writeJson(join(temporary, 'assets/images.json'), { contractVersion: '1', images: imageIndex });
     const svgByBlobId = new Map(input.svgVectors?.map((vector) => [vector.blobId, vector.svg]));
-    const vectorIndex: Array<{ blobId: number; path: string; format: 'kiwi-vector-network'; compression: 'gzip'; svgPath?: string }> = [];
+    const vectorIndex: Array<{ blobId: number; path: string; format: 'kiwi-vector-network'; compression: 'gzip'; svgPath?: string; name?: string }> = [];
     for (const vector of input.vectors) {
       const path = `assets/vectors/vector-network-${vector.blobId}.bin.gz`;
       const svgPath = `assets/vectors/vector-network-${vector.blobId}.svg`;
       await writeFile(join(temporary, path), await gzipBytes(vector.bytes));
       const svg = svgByBlobId.get(vector.blobId);
       if (svg) await writeFile(join(temporary, svgPath), svg);
-      vectorIndex.push({ blobId: vector.blobId, path, format: 'kiwi-vector-network', compression: 'gzip', ...(svg ? { svgPath } : {}) });
+      vectorIndex.push({ blobId: vector.blobId, path, format: 'kiwi-vector-network', compression: 'gzip', ...(svg ? { svgPath } : {}), ...(vector.name ? { name: vector.name } : {}) });
     }
     await writeJson(join(temporary, 'assets/vectors.json'), { contractVersion: '1', vectors: vectorIndex });
     if (input.thumbnail) await writeFile(join(temporary, 'assets/thumbnail.png'), input.thumbnail);

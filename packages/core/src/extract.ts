@@ -14,6 +14,7 @@ export async function extractFig(sourcePath: string, outDir: string): Promise<Ex
   const decoded = decodeKiwiCanvas(archive.canvas);
   const assetPaths = Object.fromEntries(archive.images.map((image) => [image.hash, `assets/images/${image.hash}.${extensionForAsset(image.format) ?? 'bin'}`]));
   const originFileKey = typeof decoded.document.originFileKey === 'string' ? decoded.document.originFileKey : undefined;
+  const vectorNames = vectorResourceNames(decoded.nodeChanges);
   const referencedVectorBlobs = new Set(decoded.nodeChanges.flatMap((change) => {
     const vectorData = change.vectorData;
     const blobId = vectorData && typeof vectorData === 'object' && !Array.isArray(vectorData) ? (vectorData as Record<string, unknown>).vectorNetworkBlob : undefined;
@@ -22,7 +23,7 @@ export async function extractFig(sourcePath: string, outDir: string): Promise<Ex
   const vectors = decoded.blobs.flatMap((blob, blobId) => {
     if (!referencedVectorBlobs.has(blobId)) return [];
     const bytes = blob && typeof blob === 'object' && 'bytes' in blob && (blob as { bytes?: unknown }).bytes instanceof Uint8Array ? (blob as { bytes: Uint8Array }).bytes : undefined;
-    return bytes ? [{ blobId, bytes }] : [];
+    return bytes ? [{ blobId, bytes, name: vectorNames[blobId] }] : [];
   });
   const vectorPaths = Object.fromEntries(vectors.map((vector) => [vector.blobId, `assets/vectors/vector-network-${vector.blobId}.bin.gz`]));
   const vectorNodes = new Map(decoded.nodeChanges.flatMap((change) => {
@@ -34,7 +35,7 @@ export async function extractFig(sourcePath: string, outDir: string): Promise<Ex
     return svg ? [{ blobId: vector.blobId, svg }] : [];
   });
   const vectorSvgPaths = Object.fromEntries(svgVectors.map((vector) => [vector.blobId, `assets/vectors/vector-network-${vector.blobId}.svg`]));
-  const agent = normalizeDocument(decoded.nodeChanges, { originFileKey, assetPaths, vectorPaths, vectorSvgPaths });
+  const agent = normalizeDocument(decoded.nodeChanges, { originFileKey, assetPaths, vectorPaths, vectorSvgPaths, vectorNames });
   const variables = extractVariables(decoded.nodeChanges);
   const warnings = agent.nodesById && Object.values(agent.nodesById).some((node) => node.styleRefs) && !decoded.nodeChanges.some((change) => change.type === 'STYLE')
     ? ['STYLE_DEFINITIONS_UNAVAILABLE']
@@ -53,6 +54,29 @@ export async function extractFig(sourcePath: string, outDir: string): Promise<Ex
 function vectorSvg(node: Record<string, unknown> | undefined, bytes: Uint8Array): string | undefined {
   const size = record(node?.size);
   return typeof size?.x === 'number' && typeof size.y === 'number' ? vectorNetworkToSvg(bytes, { x: size.x, y: size.y }) : undefined;
+}
+
+function vectorResourceNames(changes: readonly Record<string, unknown>[]): Record<number, string> {
+  const byId = new Map<string, Record<string, unknown>>();
+  for (const change of changes) { const id = guidId(change.guid); if (id) byId.set(id, change); }
+  const names: Record<number, string> = {};
+  for (const change of changes) {
+    const blobId = record(change.vectorData)?.vectorNetworkBlob;
+    if (typeof blobId !== 'number') continue;
+    let parent = record(change.parentIndex)?.guid;
+    while (parent) {
+      const node = byId.get(guidId(parent) ?? '');
+      if (!node) break;
+      if (node.type === 'FRAME' && typeof node.name === 'string' && node.name !== 'Frame') { names[blobId] = `${node.name}-${blobId}`; break; }
+      parent = record(node.parentIndex)?.guid;
+    }
+  }
+  return names;
+}
+
+function guidId(value: unknown): string | undefined {
+  const guid = record(value);
+  return typeof guid?.sessionID === 'number' && typeof guid.localID === 'number' ? `${guid.sessionID}:${guid.localID}` : undefined;
 }
 
 function record(value: unknown): Record<string, unknown> | undefined {

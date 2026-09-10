@@ -41,7 +41,7 @@ export interface TextSegment { start: number; end: number; text: string; styleId
 export interface StyleReferences { text?: string; effects?: string; strokeFill?: string; }
 export interface VariableBinding { field: string; variableId: string; resolvedType?: string; }
 export interface AssetReference { hash: string; path: string; kind: 'image-fill'; }
-export interface VectorReference { blobId: number; path: string; format: 'kiwi-vector-network'; compression: 'gzip'; svgPath?: string; }
+export interface VectorReference { blobId: number; path: string; format: 'kiwi-vector-network'; compression: 'gzip'; svgPath?: string; name?: string; }
 
 export interface AgentDocument {
   contractVersion: '1';
@@ -50,10 +50,10 @@ export interface AgentDocument {
   nodesById: Record<string, AgentNode>;
 }
 
-export interface NormalizeOptions { originFileKey?: string; assetPaths?: Readonly<Record<string, string>>; vectorPaths?: Readonly<Record<number, string>>; vectorSvgPaths?: Readonly<Record<number, string>>; }
+export interface NormalizeOptions { originFileKey?: string; assetPaths?: Readonly<Record<string, string>>; vectorPaths?: Readonly<Record<number, string>>; vectorSvgPaths?: Readonly<Record<number, string>>; vectorNames?: Readonly<Record<number, string>>; }
 
 export function normalizeDocument(changes: readonly Record<string, unknown>[], options: NormalizeOptions = {}): AgentDocument {
-  const nodes = changes.map((change, zIndex) => normalizeNode(change, zIndex, options.assetPaths, options.vectorPaths, options.vectorSvgPaths));
+  const nodes = changes.map((change, zIndex) => normalizeNode(change, zIndex, options.assetPaths, options.vectorPaths, options.vectorSvgPaths, options.vectorNames));
   const nodesById = Object.fromEntries(nodes.map((node) => [node.id, node]));
   const roots: string[] = [];
   changes.forEach((change, index) => {
@@ -146,6 +146,31 @@ function materializeExternalInstances(nodesById: Record<string, AgentNode>, chan
       const contentId = slot ? slotContentId(slot.value) : undefined;
       if (contentId) clone.childIds = effectiveChildrenFor(nodesById, contentId);
     }
+    materializeOverriddenSymbols(instance, changes, nodesById, rawChildIds);
+  }
+}
+
+function materializeOverriddenSymbols(instance: AgentNode, changes: readonly Record<string, unknown>[], nodesById: Record<string, AgentNode>, rawChildIds: ReadonlyMap<string, readonly string[]>): void {
+  const entries = record(changes[instance.zIndex]?.symbolData)?.symbolOverrides;
+  if (!Array.isArray(entries)) return;
+  for (const entry of entries) {
+    const override = record(entry); const sourceId = guidId(override?.overriddenSymbolID);
+    const source = sourceId ? nodesById[sourceId] : undefined;
+    if (!source) continue;
+    const sourceIds: string[] = [];
+    const collect = (id: string) => { if (sourceIds.includes(id)) return; sourceIds.push(id); for (const child of rawChildIds.get(id) ?? []) collect(child); };
+    collect(source.id);
+    const clonedIds = new Map(sourceIds.map((id) => [id, `${instance.id}/override/${id}`] as const));
+    for (const id of sourceIds) {
+      const original = nodesById[id]; if (!original) continue;
+      const clone = structuredClone(original);
+      clone.id = clonedIds.get(id)!; clone.node_id = original.node_id; clone.main_component_id = sourceId;
+      clone.parentId = original.id === source.id ? instance.id : clonedIds.get(original.parentId ?? '');
+      clone.childIds = (rawChildIds.get(id) ?? []).flatMap((child) => clonedIds.get(child) ? [clonedIds.get(child)!] : []);
+      nodesById[clone.id] = clone;
+    }
+    instance.childIds.push(clonedIds.get(source.id)!);
+    instance.resolvedChildIds = [...instance.childIds];
   }
 }
 
@@ -255,7 +280,7 @@ function applySymbolOverride(node: AgentNode, override: Record<string, unknown> 
   if (typeof override.name === 'string') node.name = override.name;
 }
 
-function normalizeNode(change: Record<string, unknown>, zIndex: number, assetPaths: Readonly<Record<string, string>> | undefined, vectorPaths: Readonly<Record<number, string>> | undefined, vectorSvgPaths: Readonly<Record<number, string>> | undefined): AgentNode {
+function normalizeNode(change: Record<string, unknown>, zIndex: number, assetPaths: Readonly<Record<string, string>> | undefined, vectorPaths: Readonly<Record<number, string>> | undefined, vectorSvgPaths: Readonly<Record<number, string>> | undefined, vectorNames: Readonly<Record<number, string>> | undefined): AgentNode {
   const id = idFromGuid(change.guid, zIndex);
   const textData = record(change.textData);
   const layoutKeys = ['stackMode', 'stackSpacing', 'stackHorizontalPadding', 'stackVerticalPadding', 'stackPrimaryAlignItems', 'stackCounterAlignItems'];
@@ -272,7 +297,7 @@ function normalizeNode(change: Record<string, unknown>, zIndex: number, assetPat
     ...(typeof textData?.characters === 'string' ? { text: textData.characters } : {}), ...(segments ? { textSegments: segments } : {}), ...(textLayout && Object.keys(textLayout).length ? { textLayout } : {}),
     ...(change.size === undefined ? {} : { bounds: change.size }), ...(change.transform === undefined ? {} : { transform: change.transform }),
     ...(typeof change.visible === 'boolean' ? { visible: change.visible } : {}), ...(typeof change.opacity === 'number' ? { opacity: change.opacity } : {}), ...(change.blendMode === undefined ? {} : { blendMode: change.blendMode }), ...(typeof change.mask === 'boolean' ? { mask: change.mask } : {}), ...(typeof change.frameMaskDisabled === 'boolean' ? { frameMaskDisabled: change.frameMaskDisabled } : {}), constraints: { horizontal: change.horizontalConstraint, vertical: change.verticalConstraint },
-    layout: pick(change, layoutKeys), fills: change.fillPaints, strokes: change.strokePaints, effects: change.effects, typography, ...(styles ? { styleRefs: styles } : {}), ...(bindings ? { variableBindings: bindings } : {}), assetRefs: assetReferences(change.fillPaints, assetPaths), ...(vectorReference(change.vectorData, vectorPaths, vectorSvgPaths) ? { vectorRef: vectorReference(change.vectorData, vectorPaths, vectorSvgPaths) } : {}), ...(componentPropRefs(change) ? { componentPropRefs: componentPropRefs(change) } : {})
+    layout: pick(change, layoutKeys), fills: change.fillPaints, strokes: change.strokePaints, effects: change.effects, typography, ...(styles ? { styleRefs: styles } : {}), ...(bindings ? { variableBindings: bindings } : {}), assetRefs: assetReferences(change.fillPaints, assetPaths), ...(vectorReference(change.vectorData, vectorPaths, vectorSvgPaths, vectorNames) ? { vectorRef: vectorReference(change.vectorData, vectorPaths, vectorSvgPaths, vectorNames) } : {}), ...(componentPropRefs(change) ? { componentPropRefs: componentPropRefs(change) } : {})
   };
 }
 
@@ -319,11 +344,11 @@ function variableBindings(change: Record<string, unknown>): VariableBinding[] | 
   });
   return bindings.length ? bindings : undefined;
 }
-function vectorReference(value: unknown, vectorPaths: Readonly<Record<number, string>> | undefined, vectorSvgPaths: Readonly<Record<number, string>> | undefined): VectorReference | undefined {
+function vectorReference(value: unknown, vectorPaths: Readonly<Record<number, string>> | undefined, vectorSvgPaths: Readonly<Record<number, string>> | undefined, vectorNames: Readonly<Record<number, string>> | undefined): VectorReference | undefined {
   const blobId = record(value)?.vectorNetworkBlob;
   if (typeof blobId !== 'number') return undefined;
   const path = vectorPaths?.[blobId];
-  return path ? { blobId, path, format: 'kiwi-vector-network', compression: 'gzip', ...(vectorSvgPaths?.[blobId] ? { svgPath: vectorSvgPaths[blobId] } : {}) } : undefined;
+  return path ? { blobId, path, format: 'kiwi-vector-network', compression: 'gzip', ...(vectorSvgPaths?.[blobId] ? { svgPath: vectorSvgPaths[blobId] } : {}), ...(vectorNames?.[blobId] ? { name: vectorNames[blobId] } : {}) } : undefined;
 }
 function assetReferences(value: unknown, assetPaths: Readonly<Record<string, string>> | undefined): AssetReference[] {
   if (!Array.isArray(value) || !assetPaths) return [];
