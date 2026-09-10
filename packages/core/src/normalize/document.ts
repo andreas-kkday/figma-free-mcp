@@ -131,7 +131,11 @@ function materializeExternalInstances(nodesById: Record<string, AgentNode>, chan
       clone.main_component_id = sourceId;
       clone.parentId = original.parentId === source.id ? instance.id : clonedIds.get(original.parentId ?? '');
       clone.childIds = childrenFor(original.id).flatMap((childId) => clonedIds.get(childId) ? [clonedIds.get(childId)!] : []);
-      if (clone.type === 'INSTANCE') clone.resolvedChildIds = [...clone.childIds];
+      if (clone.type === 'INSTANCE') {
+        const nestedSourceId = guidId(record(record(changes[original.zIndex]?.symbolData)?.symbolID));
+        clone.main_component_id = nestedSourceId ?? sourceId;
+        clone.resolvedChildIds = [...clone.childIds];
+      }
       else delete clone.resolvedChildIds;
       const overrideKey = guidId(record(changes[original.zIndex]?.overrideKey));
       const sourceOverride = overrides.get(original.node_id) ?? (overrideKey ? overrides.get(overrideKey) : undefined);

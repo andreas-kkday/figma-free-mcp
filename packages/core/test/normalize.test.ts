@@ -31,6 +31,16 @@ describe('normalized document', () => {
     expect(normalized.nodesById['9:1/override/7:21']!.vectorRef).toMatchObject({ blobId: 224, path: 'assets/vectors/vector-network-224.bin.gz' });
   });
 
+  test('keeps nested external instance main components resolved to their own symbols', () => {
+    const normalized = normalizeDocument([
+      { guid: { sessionID: 9, localID: 1 }, type: 'INSTANCE', symbolData: { symbolID: { sessionID: 8, localID: 10 } } },
+      { guid: { sessionID: 8, localID: 10 }, type: 'SYMBOL' },
+      { guid: { sessionID: 8, localID: 11 }, type: 'INSTANCE', symbolData: { symbolID: { sessionID: 7, localID: 20 } }, parentIndex: 1 },
+      { guid: { sessionID: 7, localID: 20 }, type: 'SYMBOL' }
+    ]);
+    expect(normalized.nodesById['9:1/component/8:11']).toMatchObject({ main_component_id: '7:20' });
+  });
+
   test('applies component property assignments to referenced text nodes', () => {
     const normalized = normalizeDocument([
       { guid: { sessionID: 9, localID: 1 }, type: 'INSTANCE', symbolData: { symbolID: { sessionID: 8, localID: 10 }, symbolOverrides: [{ guidPath: { guids: [{ sessionID: 8, localID: 11 }] }, componentPropAssignments: [{ defID: { sessionID: 7, localID: 1 }, varValue: { value: { textDataValue: { characters: 'Resolved title' } } } }] }] } },
