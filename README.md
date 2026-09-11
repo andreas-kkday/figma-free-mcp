@@ -155,7 +155,9 @@ npx -y --package figctx@0.1.0 figctx-mcp --root "$PWD/.figctx/design"
 
 It exposes `list_frames`, `list_frame_summaries`, `search_nodes`, `get_node_context`, `get_frame_bundle`,
 `review_visual_match`, `get_vector_svg`, `get_style_tokens`, `get_asset`, and `inspect_node` via stdio. Node and frame responses include
-attached reference metadata when present. The server reads only bundle files
+attached reference metadata when present. Results larger than 256 KiB are written as complete JSON to
+`$TMPDIR/.figma-mcp-{pid}/{tool_name}-XXXXX`, and the response contains the absolute `resultFile` path.
+Set `FIGMA_MCP_RESULT_MAX_BYTES` to change the inline limit. The server reads only bundle files
 plus the candidate PNG supplied to `review_visual_match`; it never opens the source `.fig`, writes to the bundle, or uses the network.
 
 Use `list_frame_summaries` or `search_nodes` to discover node IDs without loading full node records; `list_frame_summaries` returns 100 entries by default and includes `nextCursor` for the next batch (up to 200 with `limit`). `list_frames` remains available with its existing detailed response.
