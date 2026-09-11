@@ -41,6 +41,42 @@ describe('normalized document', () => {
     expect(normalized.nodesById['9:1/component/8:11']).toMatchObject({ main_component_id: '7:20' });
   });
 
+  test('keeps nested instance children under the nested instance', () => {
+    const normalized = normalizeDocument([
+      { guid: { sessionID: 9, localID: 1 }, type: 'INSTANCE', symbolData: { symbolID: { sessionID: 8, localID: 10 } } },
+      { guid: { sessionID: 8, localID: 10 }, type: 'SYMBOL' },
+      { guid: { sessionID: 8, localID: 11 }, type: 'INSTANCE', parentIndex: 1, symbolData: { symbolID: { sessionID: 7, localID: 20 } } },
+      { guid: { sessionID: 7, localID: 20 }, type: 'SYMBOL' },
+      { guid: { sessionID: 7, localID: 21 }, type: 'FRAME', name: 'Label Group', parentIndex: 3 },
+      { guid: { sessionID: 7, localID: 22 }, type: 'INSTANCE', name: 'Chevron', parentIndex: 3, symbolData: { symbolID: { sessionID: 7, localID: 30 } } },
+      { guid: { sessionID: 7, localID: 30 }, type: 'SYMBOL' }
+    ]);
+    const nested = normalized.nodesById['9:1/component/8:11']!;
+    expect(nested.childIds).toEqual([
+      '9:1/component/8:11/component/7:21',
+      '9:1/component/8:11/component/7:22'
+    ]);
+    expect(normalized.nodesById[nested.childIds[0]!]!.parentId).toBe(nested.id);
+    expect(normalized.nodesById[nested.childIds[1]!]!.name).toBe('Chevron');
+  });
+
+  test('applies direct symbol overrides to nested instances', () => {
+    const normalized = normalizeDocument([
+      { guid: { sessionID: 9, localID: 1 }, type: 'INSTANCE', symbolData: { symbolID: { sessionID: 8, localID: 10 }, symbolOverrides: [{ overriddenSymbolID: { sessionID: 7, localID: 20 }, guidPath: { guids: [{ sessionID: 8, localID: 11 }] } }] } },
+      { guid: { sessionID: 8, localID: 10 }, type: 'SYMBOL' },
+      { guid: { sessionID: 8, localID: 11 }, type: 'INSTANCE', parentIndex: 1, symbolData: { symbolID: { sessionID: 6, localID: 30 } } },
+      { guid: { sessionID: 6, localID: 30 }, type: 'SYMBOL', name: 'Default' },
+      { guid: { sessionID: 6, localID: 31 }, type: 'FRAME', name: 'Approval Status', parentIndex: 3 },
+      { guid: { sessionID: 7, localID: 20 }, type: 'SYMBOL', name: 'Override' },
+      { guid: { sessionID: 7, localID: 21 }, type: 'FRAME', name: 'Label Group', parentIndex: 5 },
+      { guid: { sessionID: 7, localID: 22 }, type: 'FRAME', name: 'Chevron', parentIndex: 5 }
+    ]);
+    expect(normalized.nodesById['9:1']!.childIds).toEqual(['9:1/component/8:11']);
+    const header = normalized.nodesById['9:1/component/8:11']!;
+    expect(header.childIds.map((id) => normalized.nodesById[id]!.name)).toEqual(['Label Group', 'Chevron']);
+    expect(header.childIds.map((id) => normalized.nodesById[id]!.name)).not.toContain('Approval Status');
+  });
+
   test('applies OVERRIDDEN_SYMBOL_ID assignments to nested instances', () => {
     const normalized = normalizeDocument([
       { guid: { sessionID: 9, localID: 1 }, type: 'INSTANCE', componentPropAssignments: [{ defID: { sessionID: 7, localID: 1 }, varValue: { value: { symbolIdValue: { guid: { sessionID: 7, localID: 20 } } } } }], symbolData: { symbolID: { sessionID: 8, localID: 10 } } },

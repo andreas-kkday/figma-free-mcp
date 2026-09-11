@@ -87,6 +87,10 @@ function materializeExternalInstances(nodesById: Record<string, AgentNode>, chan
     if (!source || source.type !== 'SYMBOL') continue;
 
     const sourceIds = new Set<string>();
+    // A nested INSTANCE borrows its children from its symbol, but those
+    // children belong to the nested instance in the materialized tree (not to
+    // the source SYMBOL). Keep that virtual parent relationship explicitly.
+    const effectiveParent = new Map<string, string>();
     const childrenFor = (id: string): string[] => {
       const raw = rawChildIds.get(id) ?? [];
       if (raw.length) return [...raw];
@@ -94,14 +98,15 @@ function materializeExternalInstances(nodesById: Record<string, AgentNode>, chan
       const nestedSourceId = node?.type === 'INSTANCE' ? guidId(record(record(changes[node.zIndex]?.symbolData)?.symbolID)) : undefined;
       return nestedSourceId ? [...(rawChildIds.get(nestedSourceId) ?? [])] : [];
     };
-    const collect = (id: string) => {
+    const collect = (id: string, parentId?: string) => {
       if (sourceIds.has(id)) return;
       const node = nodesById[id];
       if (!node) return;
       sourceIds.add(id);
-      childrenFor(id).forEach(collect);
+      if (parentId) effectiveParent.set(id, parentId);
+      childrenFor(id).forEach((childId) => collect(childId, id));
     };
-    childrenFor(source.id).forEach(collect);
+    childrenFor(source.id).forEach((childId) => collect(childId, source.id));
 
     const overrides = new Map<string, Record<string, unknown>>();
     const propertyAssignments = new Map<string, Record<string, unknown>>();
@@ -119,9 +124,12 @@ function materializeExternalInstances(nodesById: Record<string, AgentNode>, chan
     // The outer instance wins over defaults and nested-instance assignments.
     collectAssignments(changes[instance.zIndex]);
     const clonedIds = new Map<string, string>();
+    const nestedSymbolOverrides = new Map<string, Record<string, unknown>>();
     for (const id of sourceIds) {
       const sourceNode = nodesById[id]!;
-      clonedIds.set(id, `${instance.id}/component/${sourceNode.node_id}`);
+      const parentSourceId = effectiveParent.get(id) ?? sourceNode.parentId;
+      const cloneParentId = parentSourceId === source.id ? instance.id : clonedIds.get(parentSourceId ?? '') ?? instance.id;
+      clonedIds.set(id, `${cloneParentId}/component/${sourceNode.node_id}`);
     }
     for (const id of sourceIds) {
       const original = nodesById[id]!;
@@ -129,7 +137,8 @@ function materializeExternalInstances(nodesById: Record<string, AgentNode>, chan
       clone.id = clonedIds.get(id)!;
       clone.node_id = original.node_id;
       clone.main_component_id = sourceId;
-      clone.parentId = original.parentId === source.id ? instance.id : clonedIds.get(original.parentId ?? '');
+      const parentSourceId = effectiveParent.get(id) ?? original.parentId;
+      clone.parentId = parentSourceId === source.id ? instance.id : clonedIds.get(parentSourceId ?? '');
       clone.childIds = childrenFor(original.id).flatMap((childId) => clonedIds.get(childId) ? [clonedIds.get(childId)!] : []);
       if (clone.type === 'INSTANCE') {
         const nestedSourceId = guidId(record(record(changes[original.zIndex]?.symbolData)?.symbolID));
@@ -142,7 +151,9 @@ function materializeExternalInstances(nodesById: Record<string, AgentNode>, chan
       applySymbolOverride(clone, sourceOverride);
       applyComponentProperty(clone, propertyAssignments);
       nodesById[clone.id] = clone;
+      if (clone.type === 'INSTANCE' && sourceOverride?.overriddenSymbolID) nestedSymbolOverrides.set(clone.id, sourceOverride);
     }
+    materializeNestedSymbolOverrides(nestedSymbolOverrides, nodesById, rawChildIds, propertyAssignments);
     materializeOverriddenComponentSymbols(clonedIds, sourceIds, nodesById, rawChildIds, propertyAssignments);
     instance.resolvedChildIds = childrenFor(source.id).flatMap((id) => clonedIds.get(id) ? [clonedIds.get(id)!] : []);
     instance.childIds = [...instance.resolvedChildIds];
@@ -164,7 +175,11 @@ function materializeOverriddenSymbols(instance: AgentNode, changes: readonly Rec
   const entries = record(changes[instance.zIndex]?.symbolData)?.symbolOverrides;
   if (!Array.isArray(entries)) return;
   for (const entry of entries) {
-    const override = record(entry); const sourceId = guidId(override?.overriddenSymbolID);
+    const override = record(entry);
+    // A guidPath identifies a nested instance override. It is resolved against
+    // that nested instance, not appended as a new child of the outer instance.
+    if (record(override?.guidPath)) continue;
+    const sourceId = guidId(override?.overriddenSymbolID);
     const source = sourceId ? nodesById[sourceId] : undefined;
     if (!source) continue;
     const sourceIds: string[] = [];
@@ -263,6 +278,41 @@ function applyComponentProperty(node: AgentNode, assignments: Map<string, Record
     const textData = record(record(assignment.value)?.textDataValue) ?? record(record(assignment.value)?.textValue);
     if (ref.field === 'TEXT_DATA' && typeof textData?.characters === 'string') node.text = textData.characters;
     if (ref.field === 'VISIBLE' && typeof record(assignment.value)?.boolValue === 'boolean') node.visible = record(assignment.value)!.boolValue as boolean;
+  }
+}
+
+function materializeNestedSymbolOverrides(overrides: ReadonlyMap<string, Record<string, unknown>>, nodesById: Record<string, AgentNode>, rawChildIds: ReadonlyMap<string, readonly string[]>, assignments: Map<string, Record<string, unknown>>): void {
+  for (const [instanceId, override] of overrides) {
+    const instance = nodesById[instanceId];
+    const symbolId = guidId(record(override.overriddenSymbolID));
+    const symbol = symbolId ? nodesById[symbolId] : undefined;
+    if (!instance || instance.type !== 'INSTANCE' || !symbol || symbol.type !== 'SYMBOL') continue;
+
+    const descendantIds: string[] = [];
+    const collect = (id: string) => {
+      if (descendantIds.includes(id) || !nodesById[id]) return;
+      descendantIds.push(id);
+      for (const childId of rawChildIds.get(id) ?? []) collect(childId);
+    };
+    for (const childId of rawChildIds.get(symbol.id) ?? []) collect(childId);
+
+    const cloneIds = new Map(descendantIds.map((id) => [id, `${instance.id}/component/${nodesById[id]!.node_id}`] as const));
+    for (const id of descendantIds) {
+      const original = nodesById[id]!;
+      const clone = structuredClone(original);
+      clone.id = cloneIds.get(id)!;
+      clone.node_id = original.node_id;
+      clone.main_component_id = symbolId;
+      clone.parentId = original.parentId === symbol.id ? instance.id : cloneIds.get(original.parentId ?? '');
+      clone.childIds = (rawChildIds.get(id) ?? []).flatMap((childId) => cloneIds.get(childId) ? [cloneIds.get(childId)!] : []);
+      if (clone.type === 'INSTANCE') clone.resolvedChildIds = [...clone.childIds];
+      else delete clone.resolvedChildIds;
+      applyComponentProperty(clone, assignments);
+      nodesById[clone.id] = clone;
+    }
+    instance.main_component_id = symbolId;
+    instance.childIds = (rawChildIds.get(symbol.id) ?? []).flatMap((id) => cloneIds.get(id) ? [cloneIds.get(id)!] : []);
+    instance.resolvedChildIds = [...instance.childIds];
   }
 }
 
